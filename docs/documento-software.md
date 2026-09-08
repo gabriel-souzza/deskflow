@@ -1,23 +1,3 @@
-flowchart TD
-    Start((Início)) --> A1[Colaborador abre app e escaneia QR]
-    A1 --> A2[Sistema lê token]
-    A2 --> A3[Validar token JWT]
-    A3 --> D1{Token válido?}
-    D1 -- Não --> A4[Erro 401, solicitar novo QR]
-    D1 -- Sim --> A5[Buscar Booking por ID]
-    A5 --> D2{Booking existe?}
-    D2 -- Não --> A6[Erro 404]
-    D2 -- Sim --> D3{Status == PENDING?}
-    D3 -- Não --> A7[Erro 409, já confirmado/cancelado]
-    D3 -- Sim --> A8["Booking.confirm()"]
-    A8 --> A9[Salvar Booking CONFIRMED]
-    A9 --> A10[Publicar evento BookingConfirmed]
-    A10 --> A11[SSE notifica front-end]
-    A11 --> End((Fim))
-    A4 --> Start
-    A6 --> End
-    A7 --> End# DeskFlow — Documento de Software (Análise e Projeto)
-
 ## 1. Levantamento de Requisitos
 
 | ID | Descrição | Prioridade | Ator/Origem |
