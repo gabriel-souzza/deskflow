@@ -665,46 +665,6 @@ flowchart TD
 
 ```mermaid
 flowchart TB
-    subgraph Adapters["Interface Adapters"]
-        BC[BookingController «boundary»]
-        AIC[CheckInController «boundary»]
-        AC[AdminController «boundary»]
-        RC[ReportController «boundary»]
-        IC[IntegrationController «boundary»]
-        BR[BookingRepositoryPostgres «adapter»]
-        AWR[AvailabilityWindowRepositoryPostgres «adapter»]
-        QR[QuotaRepositoryPostgres «adapter»]
-        WSR[WorkspaceRepositoryPostgres «adapter»]
-        SSEPub[SsePublisher «adapter»]
-    end
-    subgraph Application["Application"]
-        CBU[CreateBookingUseCase]
-        CBUI[ConfirmBookingUseCase]
-        CBU2[CancelBookingUseCase]
-        REU[ReleaseExpiredBookingsUseCase «cron»]
-        NW[NotifyWaitlistUseCase]
-        SQ[SetQuotaUseCase]
-        MW[ManageWorkspaceUseCase]
-        GR[GenerateReportUseCase]
-        SPU[SyncPointUseCase]
-        BH[BlockHolidaysUseCase]
-        GDA[GenerateDailyAvailabilityUseCase «cron»]
-    end
-    subgraph Domain["Domain"]
-        BK[Booking «entity»]
-        AW[AvailabilityWindow «entity»]
-        QP[QuotaPeriod «entity»]
-        WS[Workspace «entity»]
-        WL[Waitlist «entity»]
-        HL[Holiday «entity»]
-        TS[TimeSlot «value»]
-        CP[Capacity «value»]
-        BRif[[BookingRepository «interface»]]
-        AWRif[[AvailabilityWindowRepository «interface»]]
-        QRif[[QuotaRepository «interface»]]
-        WSRif[[WorkspaceRepository «interface»]]
-        WLif[[WaitlistRepository «interface»]]
-    end
     subgraph Infra["Frameworks & Drivers"]
         DB[(PostgreSQL)]
         Web[FastAPI]
@@ -714,11 +674,60 @@ flowchart TB
         PointExt[Sistema de Ponto Externo]
     end
 
+    subgraph Adapters["Interface Adapters"]
+        BC["BookingController «boundary»"]
+        AIC["CheckInController «boundary»"]
+        AC["AdminController «boundary»"]
+        RC["ReportController «boundary»"]
+        IC["IntegrationController «boundary»"]
+        BR["BookingRepositoryPostgres «adapter»"]
+        AWR["AvailabilityWindowRepositoryPostgres «adapter»"]
+        QR["QuotaRepositoryPostgres «adapter»"]
+        WSR["WorkspaceRepositoryPostgres «adapter»"]
+        WLR["WaitlistRepositoryPostgres «adapter»"]
+        ALR["AuditLogRepositoryPostgres «adapter»"]
+        SSEPub["SsePublisher «adapter»"]
+    end
+
+    subgraph Application["Application"]
+        CBU[CreateBookingUseCase]
+        CBUI[ConfirmBookingUseCase]
+        CBU2[CancelBookingUseCase]
+        REU["ReleaseExpiredBookingsUseCase «cron»"]
+        NW[NotifyWaitlistUseCase]
+        SQ[SetQuotaUseCase]
+        MW[ManageWorkspaceUseCase]
+        GR[GenerateReportUseCase]
+        SPU[SyncPointUseCase]
+        BH[BlockHolidaysUseCase]
+        GDA["GenerateDailyAvailabilityUseCase «cron»"]
+    end
+
+    subgraph Domain["Domain"]
+        BK["Booking «entity»"]
+        AW["AvailabilityWindow «entity»"]
+        QP["QuotaPeriod «entity»"]
+        WS["Workspace «entity»"]
+        WL["Waitlist «entity»"]
+        HL["Holiday «entity»"]
+        TS["TimeSlot «value»"]
+        CP["Capacity «value»"]
+        BRif[["BookingRepository «interface»"]]
+        AWRif[["AvailabilityWindowRepository «interface»"]]
+        QRif[["QuotaRepository «interface»"]]
+        WSRif[["WorkspaceRepository «interface»"]]
+        WLif[["WaitlistRepository «interface»"]]
+        ALRif[["AuditLogRepository «interface»"]]
+    end
+
+    %% Chamadas de Entrada
     Web --> BC
     Web --> AIC
     Web --> AC
     Web --> RC
     Web --> IC
+
+    %% Controllers -> Use Cases
     BC --> CBU
     AIC --> CBUI
     AC --> SQ
@@ -726,55 +735,77 @@ flowchart TB
     AC --> BH
     RC --> GR
     IC --> SPU
+
+    %% Agendador -> Use Cases
     Cron --> REU
     Cron --> GDA
+
+    %% Use Cases -> Domínio
     CBU --> BK
     CBU --> AW
     CBU --> QP
     CBU --> BRif
     CBU --> AWRif
     CBU --> QRif
+
     CBUI --> BK
     CBUI --> AW
+
     CBU2 --> BK
     CBU2 --> AW
     CBU2 --> QP
+
     REU --> AW
     REU --> BK
     REU --> NW
+
     NW --> WL
     NW --> WLif
+
     SQ --> QP
     SQ --> QRif
+
     MW --> WS
     MW --> WSRif
+
     GR --> BRif
     GR --> WSRif
     GR --> QRif
+
     SPU --> BK
-    SPU --> ALRif[[AuditLogRepository «interface»]]
+    SPU --> ALRif
+
     BH --> HL
     BH --> AWRif
+
     GDA --> AWRif
     GDA --> HL
-    BRif -.implementa.-> BR
-    AWRif -.implementa.-> AWR
-    QRif -.implementa.-> QR
-    WSRif -.implementa.-> WSR
-    WLif -.implementa.-> WLR[WaitlistRepositoryPostgres «adapter»]
-    ALRif -.implementa.-> ALR[AuditLogRepositoryPostgres «adapter»]
+
+    %% Inversão de Dependência (Adapters implementam Interfaces do Domínio)
+    BRif -. implementa .-> BR
+    AWRif -. implementa .-> AWR
+    QRif -. implementa .-> QR
+    WSRif -. implementa .-> WSR
+    WLif -. implementa .-> WLR
+    ALRif -. implementa .-> ALR
+
+    %% Adapters de Persistência -> Banco de Dados
     BR --> DB
     AWR --> DB
     QR --> DB
     WSR --> DB
     WLR --> DB
     ALR --> DB
+
+    %% Eventos e Notificações (SSE)
     CBU --> SSEPub
     CBUI --> SSEPub
     CBU2 --> SSEPub
     REU --> SSEPub
     NW --> SSEPub
     SSEPub --> SSEServer
+
+    %% Integrações e Serviços Adicionais
     AIC --> QRGen
     SPU --> PointExt
 ```
