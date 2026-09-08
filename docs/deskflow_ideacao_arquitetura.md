@@ -10,7 +10,7 @@
 - `SELECT … FOR UPDATE NOWAIT` em uma linha da tabela `workspaces` quando uma reserva tenta ocupá-la.
 - `SERIALIZABLE` isolation level com retry em loop em caso de `SerializationFailure` (código 40001).
 - `EXCLUDE USING gist` com `tstzrange` para garantir que dois intervalos sobrepostos não coexistam para o mesmo workspace.
-- Versionamento otimista (`@version_id` mapped column) na entidade `Booking` para edições subsequentes.
+- Versionamento otimista (`@version_id` mapped column) na entidade `AvailabilityWindow` para detectar tentativas concorrentes de inserção em `booking_windows`.
 
 **Trade-offs assumidos:**
 - Latência de commit dominada pelo WAL fsync; filas de espera em hotspots (ex: Mesa 12A em horário nobre).
@@ -36,8 +36,8 @@
 **Princípio:** O tempo é modelado como janelas discretas (`AvailabilityWindow`) imutáveis, e toda mutação gera um evento. Concorrência é resolvida por *intenção* (commander pattern) e *validação temporal* sem locks.
 
 **Mecanismos centrais:**
-- `AvailabilityWindow` é um Value Object imutável com `frozenset[BookingId]` já confirmados — toda mudança produz um novo snapshot.
-- Reserva como `BookingIntent` (não confirmada) que passa por `confirm()` que verifica sobreposição.
+- `AvailabilityWindow` é um aggregate root imutável (PK `workspace_id, day, slot_index`) com `version_id` para lock otimista. A contagem de reservas confirmadas é materializada na tabela associativa `booking_windows`.
+- Reserva como `Booking` (PENDING) que passa por `confirm()` que valida invariantes I1–I6.
 - Event Sourcing parcial: persistimos apenas `events.jsonl` por workspace com offsets; o estado é *derived*.
 - Janela de booking é um *range discreto* (slots de 15min) permitindo comparação O(1) por índice.
 
@@ -79,16 +79,25 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
-from typing import NewType
+from typing import NewType, Protocol
 import uuid
 
 BookingId = NewType("BookingId", str)
 WorkspaceId = NewType("WorkspaceId", str)
 EmployeeId = NewType("EmployeeId", str)
 CostCenterId = NewType("CostCenterId", str)
-IntentId = NewType("IntentId", str)
 
 SLOT_MINUTES = 15
+
+
+class Clock(Protocol):
+    def now(self) -> datetime: ...
+
+
+class IdGenerator(Protocol):
+    def generate_booking_id(self) -> BookingId: ...
+    def generate_workspace_id(self) -> WorkspaceId: ...
+    def generate_employee_id(self) -> EmployeeId: ...
 
 
 class BookingStatus(str, Enum):
@@ -96,6 +105,48 @@ class BookingStatus(str, Enum):
     CONFIRMED = "confirmed"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
+
+
+# Interfaces de repository (Application Layer) — implementadas em src/adapters/repositories/
+class BookingRepository(Protocol):
+    def find_by_id(self, booking_id: BookingId) -> Booking | None: ...
+    def find_by_employee_and_day(self, employee_id: EmployeeId, day: date) -> list[Booking]: ...
+    def find_pending_expired(self, before: datetime) -> list[Booking]: ...
+    def find_pending_expired_batch(self, station_cutoff: datetime, meeting_cutoff: datetime) -> list[Booking]: ...
+    def save(self, booking: Booking) -> None: ...
+
+
+class AvailabilityWindowRepository(Protocol):
+    def get_or_create(self, workspace_id: WorkspaceId, day: date, slot_index: int) -> "AvailabilityWindow": ...
+    def get_by_day(self, day: date) -> list["AvailabilityWindow"]: ...
+    def save(self, window: "AvailabilityWindow") -> None: ...
+
+
+class QuotaRepository(Protocol):
+    def get_for_period(self, cost_center: CostCenterId, day: date) -> "QuotaPeriod": ...
+    def save(self, quota: "QuotaPeriod") -> None: ...
+
+
+class BookingWindowRepository(Protocol):
+    def count_by_window(self, workspace_id: WorkspaceId, day: date, slot_index: int) -> int: ...
+    def save(self, bw: "BookingWindow") -> None: ...
+    def delete_by_booking(self, booking_id: BookingId) -> int: ...
+
+
+class WorkspaceRepository(Protocol):
+    def get_by_id(self, workspace_id: WorkspaceId) -> "Workspace" | None: ...
+    def list_active(self) -> list["Workspace"]: ...
+    def save(self, workspace: "Workspace") -> None: ...
+
+
+class WaitlistRepository(Protocol):
+    def next_for(self, workspace_id: WorkspaceId, day: date, slot_index: int) -> "Waitlist" | None: ...
+    def save(self, entry: "Waitlist") -> None: ...
+
+
+class DomainEventBus(Protocol):
+    def publish(self, event: object) -> None: ...
+    def publish_batch(self, events: list[object]) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,22 +191,22 @@ class AvailabilityWindow:
     day: date
     slot_index: int
     capacity: Capacity
-    confirmed_booking_ids: frozenset[BookingId] = field(default_factory=frozenset)
+    version_id: int = 0
 
-    def is_full(self) -> bool:
-        return len(self.confirmed_booking_ids) >= self.capacity.seats
+    def seats_available(self) -> int:
+        return self.capacity.seats
 
-    def with_booking(self, booking_id: BookingId) -> "AvailabilityWindow":
-        if booking_id in self.confirmed_booking_ids:
-            raise DuplicateBookingError(booking_id)
-        if self.is_full():
-            raise CapacityExceededError(self.workspace_id, self.slot_index)
-        return replace(self, confirmed_booking_ids=self.confirmed_booking_ids | {booking_id})
+    def is_full(self, confirmed_count: int) -> bool:
+        return confirmed_count >= self.capacity.seats
 
-    def without_booking(self, booking_id: BookingId) -> "AvailabilityWindow":
-        if booking_id not in self.confirmed_booking_ids:
-            raise UnknownBookingError(booking_id)
-        return replace(self, confirmed_booking_ids=self.confirmed_booking_ids - {booking_id})
+
+@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True)
+class BookingWindow:
+    booking_id: BookingId
+    workspace_id: WorkspaceId
+    day: date
+    slot_index: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,17 +245,28 @@ class Booking:
     cost_center: CostCenterId
     slot: TimeSlot
     status: BookingStatus
+    qr_token: str
     created_at: datetime
+    modified_at: datetime | None = None
 
     def confirm(self) -> "Booking":
         if self.status is not BookingStatus.PENDING:
             raise InvalidStateTransitionError(self.status, BookingStatus.CONFIRMED)
         return replace(self, status=BookingStatus.CONFIRMED)
 
-    def cancel(self) -> "Booking":
+    def cancel(self, clock: Clock) -> "Booking":
         if self.status is BookingStatus.CANCELLED:
             raise InvalidStateTransitionError(self.status, BookingStatus.CANCELLED)
+        if self.slot.start - clock.now() < timedelta(hours=2):
+            raise InvalidCancellationError(
+                f"booking {self.id} cannot be cancelled with less than 2h anticipation"
+            )
         return replace(self, status=BookingStatus.CANCELLED)
+
+    def expire(self) -> "Booking":
+        if self.status is not BookingStatus.PENDING:
+            raise InvalidStateTransitionError(self.status, BookingStatus.EXPIRED)
+        return replace(self, status=BookingStatus.EXPIRED)
 
     def duration_hours(self) -> Decimal:
         return Decimal((self.slot.end - self.slot.start).total_seconds()) / Decimal(3600)
@@ -212,6 +274,7 @@ class Booking:
 
 # Exceções de domínio (também parte do modelo)
 class DomainError(Exception): ...
+class InvalidWorkspaceError(DomainError): ...
 class InvalidTimeSlotError(DomainError): ...
 class InvalidCapacityError(DomainError): ...
 class InvalidQuotaPeriodError(DomainError): ...
@@ -224,6 +287,169 @@ class QuotaExceededError(DomainError):
     def __init__(self, cc: CostCenterId, remaining: Decimal, requested: Decimal) -> None:
         super().__init__(f"cost center {cc}: remaining {remaining}h < requested {requested}h")
 class InvalidStateTransitionError(DomainError): ...
+class InvalidCheckInTokenError(DomainError): ...
+class InvalidCancellationError(DomainError): ...
+class RepositoryConflictError(DomainError): ...
+
+
+# Domain Events (publicados pelo EventBus após cada use case)
+@dataclass(frozen=True, slots=True)
+class BookingConfirmed:
+    booking_id: BookingId
+    workspace_id: WorkspaceId
+    employee_id: EmployeeId
+    confirmed_at: datetime
+
+    @classmethod
+    def from_booking(cls, booking: "Booking") -> "BookingConfirmed":
+        return cls(
+            booking_id=booking.id,
+            workspace_id=booking.workspace_id,
+            employee_id=booking.employee_id,
+            confirmed_at=datetime.utcnow(),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BookingCancelled:
+    booking_id: BookingId
+    cancelled_at: datetime
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class BookingExpired:
+    booking_id: BookingId
+    expired_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class QuotaConsumed:
+    cost_center: CostCenterId
+    hours: Decimal
+    remaining_hours: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class QuotaAlert:
+    """Publicado quando consumed_hours / total_hours >= 0.8 (80%) ou 0.95 (95%)."""
+
+    cost_center: CostCenterId
+    percentage: float
+    consumed_hours: Decimal
+    total_hours: Decimal
+    threshold: float
+
+
+@dataclass(frozen=True, slots=True)
+class WaitlistNotified:
+    workspace_id: WorkspaceId
+    employee_id: EmployeeId
+    slot_start: datetime
+    slot_end: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class AvailabilityReleased:
+    workspace_id: WorkspaceId
+    day: date
+    slot_index: int
+
+
+# Entidades complementares (presentes no dominio, mas sem lógica de invariante
+# complexa — listadas para rastreabilidade com documento-software.md)
+@dataclass(frozen=True, slots=True)
+class Employee:
+    id: EmployeeId
+    name: str
+    email: str
+    cost_center: CostCenterId
+
+    def is_eligible_for_booking(self, day: date) -> bool:
+        raise NotImplementedError(
+            "Regra de elegibilidade (3 dias presenciais) vem do sistema de ponto "
+            "externo via SyncPointUseCase. Aqui apenas declaramos a interface."
+        )
+
+
+@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True)
+class Holiday:
+    day: date
+    description: str
+
+    def is_blocked(self) -> bool:
+        return True
+
+
+@dataclass(frozen=True, slots=True)
+class Waitlist:
+    id: str
+    workspace_id: WorkspaceId
+    employee_id: EmployeeId
+    desired_start: datetime
+    desired_end: datetime
+    created_at: datetime
+    notified_at: datetime | None = None
+
+    def is_notified(self) -> bool:
+        return self.notified_at is not None
+
+
+class WorkspaceType(str, Enum):
+    STATION = "estacao"
+    MEETING_ROOM = "sala"
+
+
+@dataclass(frozen=True, slots=True)
+class Workspace:
+    id: WorkspaceId
+    code: str
+    floor: str
+    zone: str
+    type: WorkspaceType
+    capacity: Capacity
+    resources: tuple[str, ...] = ()
+    is_active: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.code.strip():
+            raise InvalidWorkspaceError("code cannot be empty")
+        if self.type is WorkspaceType.STATION and self.capacity.seats != 1:
+            raise InvalidWorkspaceError("station must have capacity=1")
+
+    def is_station(self) -> bool:
+        return self.type is WorkspaceType.STATION
+
+    def is_meeting_room(self) -> bool:
+        return self.type is WorkspaceType.MEETING_ROOM
+
+
+@dataclass(frozen=True, slots=True)
+class CostCenter:
+    id: CostCenterId
+    code: str
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class Employee:
+    id: EmployeeId
+    name: str
+    email: str
+    cost_center: CostCenterId
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class AuditLog:
+    id: str
+    entity_type: str
+    entity_id: str
+    action: str
+    actor_id: EmployeeId | None
+    timestamp: datetime
+    metadata: dict
 ```
 
 ### 2. Invariantes e Regras de Negócio
@@ -231,18 +457,17 @@ class InvalidStateTransitionError(DomainError): ...
 | # | Invariante | Garantida por |
 |---|---|---|
 | **I1** | Toda reserva ocupa um intervalo discreto alinhado em grid de 15 min, com `start < end` e mínimo de 1 slot. | `TimeSlot.__post_init__` |
-| **I2** | Uma `AvailabilityWindow` nunca contém `confirmed_booking_ids` maior que `capacity.seats`; inserção de duplicata é proibida. | `AvailabilityWindow.with_booking` |
+| **I2** | Uma `AvailabilityWindow` nunca excede `capacity.seats` reservas confirmadas; inserção duplicada em `booking_windows` é prevenida. | `AvailabilityWindow.is_full(confirmed_count)` verificado antes do `INSERT` em `booking_windows` |
 | **I3** | `QuotaPeriod.consumed_hours` nunca excede `total_hours`; consumo é monotônico. | `QuotaPeriod.consume` |
 | **I4** | Transições de estado de `Booking` são unidirecionais: `PENDING → CONFIRMED` ou `PENDING → CANCELLED`; cancelamento duplo é proibido. | `Booking.confirm` / `Booking.cancel` |
-| **I5** | Toda reserva confirmada consome horas do centro de custo na mesma operação atômica (consistência entre `Booking` e `QuotaPeriod`). | `BookingService.confirm_with_quota` (caso de uso) |
-| **I6** | Duas reservas para o mesmo `workspace_id` nunca se sobrepõem em janelas confirmadas (constraint composicional). | `AvailabilityWindow.with_booking` aplicado a cada slot da reserva |
+| **I5** | Toda reserva confirmada consome horas do centro de custo na mesma operação atômica (consistência entre `Booking` e `QuotaPeriod`). | `CreateBookingUseCase.execute` orchestrating both in one transaction |
+| **I6** | Duas reservas para o mesmo `workspace_id` nunca se sobrepõem em janelas confirmadas (constraint composicional). | `BookingWindowRepository.count_by_window()` verificado antes de cada `INSERT` na junction table |
 
 ### 3. Caso de Uso: `CreateBookingUseCase`
 
 ```python
 @dataclass(frozen=True, slots=True)
 class CreateBookingCommand:
-    intent_id: IntentId
     workspace_id: WorkspaceId
     employee_id: EmployeeId
     cost_center: CostCenterId
@@ -255,6 +480,7 @@ class CreateBookingUseCase:
         windows: "AvailabilityWindowRepository",
         quotas: "QuotaRepository",
         bookings: "BookingRepository",
+        booking_windows: "BookingWindowRepository",
         events: "DomainEventBus",
         clock: "Clock",
         id_generator: "IdGenerator",
@@ -262,6 +488,7 @@ class CreateBookingUseCase:
         self._windows = windows
         self._quotas = quotas
         self._bookings = bookings
+        self._booking_windows = booking_windows
         self._events = events
         self._clock = clock
         self._ids = id_generator
@@ -276,6 +503,7 @@ class CreateBookingUseCase:
             cost_center=cmd.cost_center,
             slot=cmd.slot,
             status=BookingStatus.PENDING,
+            qr_token=str(uuid.uuid4()),
             created_at=self._clock.now(),
         )
 
@@ -285,35 +513,133 @@ class CreateBookingUseCase:
                 day=slot_start.date(),
                 slot_index=int((slot_start.hour * 60 + slot_start.minute) // SLOT_MINUTES),
             )
-            new_window = window.with_booking(booking_id)  # raises CapacityExceededError
-            self._windows.save(new_window)
+            confirmed_count = self._booking_windows.count_by_window(
+                workspace_id=cmd.workspace_id,
+                day=slot_start.date(),
+                slot_index=int((slot_start.hour * 60 + slot_start.minute) // SLOT_MINUTES),
+            )
+            if window.is_full(confirmed_count):
+                raise CapacityExceededError(cmd.workspace_id, window.slot_index)
+            bw = BookingWindow(
+                booking_id=booking_id,
+                workspace_id=cmd.workspace_id,
+                day=slot_start.date(),
+                slot_index=int((slot_start.hour * 60 + slot_start.minute) // SLOT_MINUTES),
+            )
+            self._booking_windows.save(bw)
 
         quota = self._quotas.get_for_period(
             cost_center=cmd.cost_center,
             day=cmd.slot.start.date(),
         )
-        new_quota = quota.consume(booking.duration_hours())  # raises QuotaExceededError
+        new_quota = quota.consume(booking.duration_hours())
         self._quotas.save(new_quota)
 
-        confirmed = booking.confirm()
-        self._bookings.save(confirmed)
+        self._bookings.save(booking)
 
         self._events.publish_batch([
-            BookingConfirmed.from_booking(confirmed),
             QuotaConsumed(cmd.cost_center, booking.duration_hours(), new_quota.remaining_hours()),
         ])
-        return confirmed
+        return booking
 ```
 
 **Fluxo de exceções (ordenado do mais provável ao mais raro):**
 
 1. `InvalidTimeSlotError` — payload do front-end inválido (erro 400).
-2. `CapacityExceededError` — janela cheia (erro 409 + sugestão de slots adjacentes).
+2. `CapacityExceededError` — janela cheia, verificado via `count_by_window()` (erro 409 + sugestão de slots adjacentes).
 3. `QuotaExceededError` — centro de custo estourado (erro 402 com `remaining_hours` para a UI).
-4. `DuplicateBookingError` — reenvio por retry (idempotência via `intent_id`).
-5. `RepositoryConflictError` — janela modificada entre `get` e `save` (retry com backoff: a chave é que o `save` é otimista por `version_id` na projection materializada do window; o caso de uso é re-entrante).
+4. `RepositoryConflictError` — `booking_windows` modificado entre contagem e insert (retry com backoff: o `INSERT` na junction table usa optimistic lock via `version_id` na `availability_windows`).
 
-**Observação crítica sobre concorrência:** O Ramo C elimina *overbooking* não por lock, mas por **monotonicidade estrutural**: cada `AvailabilityWindow` é imutável; o método `with_booking` é função pura. Concorrência é resolvida pelo repositório via *optimistic concurrency* (`@version_id` na projection materializada do window). O retry é simples e local; sem Lua, sem Redis, sem `FOR UPDATE`.
+**Observação crítica sobre concorrência:** O Ramo C elimina *overbooking* não por lock, mas por **monotonicidade estrutural**: `AvailabilityWindow` é imutável (aggregate root separado), e a verificação de capacidade é feita via contagem na tabela associativa `booking_windows`. Concorrência é resolvida pelo `BookingWindowRepository` via *optimistic concurrency* (`@version_id` na `availability_windows`). O retry é simples e local; sem Lua, sem Redis, sem `FOR UPDATE`.
+
+
+### 4. Caso de Uso: `ConfirmBookingUseCase` (Check-in via QR Code)
+
+```python
+@dataclass(frozen=True, slots=True)
+class ConfirmBookingCommand:
+    booking_id: BookingId
+    token: str  # QR Code payload, validado contra hash em Booking.qr_token
+
+
+class ConfirmBookingUseCase:
+    def __init__(
+        self,
+        bookings: "BookingRepository",
+        events: "DomainEventBus",
+        clock: "Clock",
+    ) -> None:
+        self._bookings = bookings
+        self._events = events
+        self._clock = clock
+
+    def execute(self, cmd: ConfirmBookingCommand) -> Booking:
+        booking = self._bookings.find_by_id(cmd.booking_id)
+        if booking is None:
+            raise UnknownBookingError(f"booking {cmd.booking_id} not found")
+        if booking.qr_token != cmd.token:
+            raise InvalidCheckInTokenError(f"invalid token for booking {cmd.booking_id}")
+        confirmed = booking.confirm()
+        if confirmed.status is not BookingStatus.CONFIRMED:
+            raise InvalidStateTransitionError(booking.status, BookingStatus.CONFIRMED)
+        self._bookings.save(confirmed)
+        self._events.publish(BookingConfirmed.from_booking(confirmed))
+        return confirmed
+```
+
+
+### 5. Caso de Uso: `ReleaseExpiredBookingsUseCase` (Cron — a cada 1 min)
+
+```python
+@dataclass(frozen=True, slots=True)
+class ReleaseExpiredBookingsCommand:
+    pass  # sem parâmetros — tolerância é por tipo de workspace
+
+
+class ReleaseExpiredBookingsUseCase:
+    def __init__(
+        self,
+        bookings: "BookingRepository",
+        booking_windows: "BookingWindowRepository",
+        workspaces: "WorkspaceRepository",
+        waitlist: "WaitlistRepository",
+        events: "DomainEventBus",
+        clock: "Clock",
+    ) -> None:
+        self._bookings = bookings
+        self._booking_windows = booking_windows
+        self._workspaces = workspaces
+        self._waitlist = waitlist
+        self._events = events
+        self._clock = clock
+
+    def execute(self, cmd: ReleaseExpiredBookingsCommand) -> list[Booking]:
+        # Tolerância diferenciada: 10 min estação, 15 min sala (RO-01, RO-05)
+        now = self._clock.now()
+        cutoff_station = now - timedelta(minutes=10)
+        cutoff_meeting = now - timedelta(minutes=15)
+        expired = self._bookings.find_pending_expired_batch(
+            station_cutoff=cutoff_station,
+            meeting_cutoff=cutoff_meeting,
+        )
+        for booking in expired:
+            self._booking_windows.delete_by_booking(booking.id)
+            released = booking.expire()
+            self._bookings.save(released)
+            self._events.publish_batch([
+                BookingExpired(booking.id, self._clock.now()),
+                AvailabilityReleased(
+                    workspace_id=booking.workspace_id,
+                    day=booking.slot.start.date(),
+                    slot_index=int((booking.slot.start.hour * 60 + booking.slot.start.minute) // SLOT_MINUTES),
+                ),
+            ])
+        return expired
+```
+
+**Fluxo de exceções:**
+
+1. `InvalidStateTransitionError` — tentativa de expirar booking que não está PENDING (retry ignorando).
 
 ---
 

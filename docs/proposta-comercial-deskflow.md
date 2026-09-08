@@ -1,8 +1,8 @@
-# PROPOSTA COMERCIAL EXECUTIVA — DESKWORKFLOW
+# PROPOSTA COMERCIAL EXECUTIVA — DeskFlow
 
-## 1. SUMÁRIO EXECUTIVO
+## 1. Sumário Executivo
 
-**DeskFlow** é uma plataforma de gestão de espaços híbridos projetada especificamente para resolver os desafios de sobrecarga, ociosidade e falta de controle de custos do seu modelo de trabalho. Com um investimento inicial de **R$ 25.000,00** e uma licença mensal de **R$ 8.500,00**, a solução entrega **30% de redução nos custos com ociosidade em até 90 dias**, com retorno sobre investimento (ROI) positivo desde o segundo mês de operação.
+**DeskFlow** é uma plataforma de gestão de espaços híbridos projetada especificamente para resolver os desafios de sobrecarga, ociosidade e falta de controle de custos do seu modelo de trabalho. Com um investimento inicial de **R$ 25.000,00** e uma licença mensal de **R$ 8.500,00**, a solução entrega **70% de redução nos custos com ociosidade em até 90 dias**, com retorno sobre investimento (ROI) positivo já no primeiro mês de operação.
 
 **Investimento Total:** R$ 25.000,00 (setup) + R$ 8.500,00/mês (licença)
 **Prazo:** 6 semanas (3 sprints quinzenais)
@@ -10,7 +10,7 @@
 
 ---
 
-## 2. DIAGNÓSTICO & DESAFIOS MAPEADOS
+## 2. Diagnóstico e Desafios Mapeados
 
 O diagnóstico revela três problemas interdependentes que consomem recursos críticos da sua operação:
 
@@ -20,11 +20,11 @@ O diagnóstico revela três problemas interdependentes que consomem recursos cr�
 | **No-show de 35%** | 105 estações ociosas/dia | R$ 126.000,00 de desperdício mensal |
 | **Custo total de ociosidade** | 250 estações × R$ 1.200,00 | R$ 300.000,00 fixo/mês (65% de utilização) |
 
-Esses problemas geram **R$ 169.520,00/mês de custo de ociosidade** — mais de **10 vezes** o orçamento mensal disponível (R$ 15.000,00). Sem intervenção, a empresa perde produtividade, aumenta custos operacionais e compromete a experiência do colaborador.
+Esses problemas geram **R$ 169.520,00/mês de custo de ociosidade** — entre **7 e 11 vezes** o orçamento mensal disponível (R$ 15.000,00). Sem intervenção, a empresa perde produtividade, aumenta custos operacionais e compromete a experiência do colaborador.
 
 ---
 
-## 3. A SOLUÇÃO DESKWORKFLOW (ESCOPO RESUMIDO E STACK)
+## 3. A Solução DeskFlow (Escopo Resumido e Stack)
 
 ### Arquitetura Técnica
 
@@ -43,7 +43,7 @@ Esses problemas geram **R$ 169.520,00/mês de custo de ociosidade** — mais de 
 
 ---
 
-## 4. CRONOGRAMA DE IMPLEMENTAÇÃO (3 SPRINTS QUINZENAIS)
+## 4. Cronograma de Implementação (3 Sprints Quinzenais)
 
 | Sprint | Foco | Entregas Principais |
 |---|---|---|
@@ -55,25 +55,30 @@ Esses problemas geram **R$ 169.520,00/mês de custo de ociosidade** — mais de 
 
 ---
 
-## 5. PLANO DE INVESTIMENTO E ANÁLISE DE ROI
+## 5. Plano de Investimento e Análise de ROI
 
 | Item | Valor | Observação |
 |---|---|---|
 | **Setup (One-time)** | R$ 25.000,00 | Modelagem de domínio, onboarding, integração com sistema de ponto |
 | **Licença Mensal** | R$ 8.500,00 | DeskFlow — dentro do orçamento de R$ 15.000,00/mês |
 | **Investimento Total (6 meses)** | R$ 89.000,00 | Setup + 6 meses de licença |
-| **Economia Mensal (ROI)** | R$ 50.700,00 | Redução de 30% nos custos com ociosidade (R$ 169.520 → R$ 118.664) |
-| **Payback** | **< 1 mês** | Economia mensal supera o custo de licença logo no primeiro ciclo |
+| **Economia Mensal (ROI)** | R$ 118.664,00 | 70% de redução nos custos com ociosidade (R$ 169.520 → R$ 50.856) |
+| **Custo da licença** | R$ 8.500,00/mês | Dentro do teto de R$ 15.000,00/mês |
+| **Lucro líquido mensal** | R$ 110.164,00 | Economia mensal subtraída da licença |
+| **Payback** | **< 1 mês** | Economia mensal (R$ 118.664) supera o custo de licença (R$ 8.500) já no primeiro mês |
 
-**Análise de ROI:**
+**Análise de ROI (verificação):**
 - **Custo mensal de ociosidade:** R$ 169.520,00
 - **Economia projetada:** R$ 118.664,00 (70% de redução)
-- **Lucro líquido mensal:** R$ 51.856,00
+- **Custo da licença:** R$ 8.500,00/mês (dentro do orçamento de R$ 15.000,00)
+- **Lucro líquido mensal:** R$ 110.164,00
 - **Payback:** Menos de 1 mês (primeiro mês de lucro líquido)
+
+Nota: a tabela de investimento acima e esta análise derivam dos mesmos dados — qualquer divergência entre elas é erro de cálculo, não de cenário.
 
 ---
 
-## 6. TERMOS E PRÓXIMOS PASSOS
+## 6. Termos e Próximos Passos
 
 **Termos:**
 - Implementação em 6 semanas (3 sprints quinzenais)
