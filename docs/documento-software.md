@@ -643,15 +643,12 @@ flowchart TD
 
 ## 9. Diagrama de Componentes
 
+**Visão de Fluxos e Casos de Uso (Camada Principal)**
+
 ```mermaid
 flowchart TB
     subgraph Infra["Frameworks & Drivers"]
-        DB[(PostgreSQL)]
         Web[FastAPI]
-        SSEServer[SSE Stream]
-        QRGen[QR Code Generator]
-        Cron[Scheduler / APScheduler]
-        PointExt[Sistema de Ponto Externo]
     end
 
     subgraph Adapters["Interface Adapters"]
@@ -659,39 +656,58 @@ flowchart TB
         AIC["CheckInController «boundary»"]
         AC["AdminController «boundary»"]
         RC["ReportController «boundary»"]
-        IC["IntegrationController «boundary»"]
-        BR["BookingRepositoryPostgres «adapter»"]
-        AWR["AvailabilityWindowRepositoryPostgres «adapter»"]
-        QR["QuotaRepositoryPostgres «adapter»"]
-        WSR["WorkspaceRepositoryPostgres «adapter»"]
-        WLR["WaitlistRepositoryPostgres «adapter»"]
-        ALR["AuditLogRepositoryPostgres «adapter»"]
-        SSEPub["SsePublisher «adapter»"]
     end
 
-    subgraph Application["Application"]
+    subgraph Application["Application (Use Cases)"]
         CBU[CreateBookingUseCase]
         CBUI[ConfirmBookingUseCase]
         CBU2[CancelBookingUseCase]
-        REU["ReleaseExpiredBookingsUseCase «cron»"]
-        NW[NotifyWaitlistUseCase]
         SQ[SetQuotaUseCase]
         MW[ManageWorkspaceUseCase]
-        GR[GenerateReportUseCase]
-        SPU[SyncPointUseCase]
         BH[BlockHolidaysUseCase]
-        GDA["GenerateDailyAvailabilityUseCase «cron»"]
+        GR[GenerateReportUseCase]
     end
 
-    subgraph Domain["Domain"]
+    subgraph Domain["Domain (Entities & Values)"]
         BK["Booking «entity»"]
         AW["AvailabilityWindow «entity»"]
         QP["QuotaPeriod «entity»"]
         WS["Workspace «entity»"]
-        WL["Waitlist «entity»"]
         HL["Holiday «entity»"]
         TS["TimeSlot «value»"]
         CP["Capacity «value»"]
+    end
+
+    %% Entradas
+    Web --> BC & AIC & AC & RC
+
+    %% Mapeamento para Use Cases
+    BC --> CBU
+    AIC --> CBUI
+    AC --> SQ & MW & BH
+    RC --> GR
+
+    %% Use Cases -> Regras de Negócio do Domínio
+    CBU --> BK & AW & QP
+    CBUI --> BK & AW
+    CBU2 --> BK & AW & QP
+    SQ --> QP
+    MW --> WS
+    BH --> HL
+    
+    BK --- TS
+    AW --- CP
+```
+
+**Visão de Persistência e Inversão de Dependência**
+
+```mermaid
+flowchart TB
+    subgraph Application["Application (Use Cases)"]
+        UCs["Use Cases (CBU, SQ, MW, GR, etc.)"]
+    end
+
+    subgraph Domain["Domain (Interfaces)"]
         BRif[["BookingRepository «interface»"]]
         AWRif[["AvailabilityWindowRepository «interface»"]]
         QRif[["QuotaRepository «interface»"]]
@@ -700,68 +716,22 @@ flowchart TB
         ALRif[["AuditLogRepository «interface»"]]
     end
 
-    %% Chamadas de Entrada
-    Web --> BC
-    Web --> AIC
-    Web --> AC
-    Web --> RC
-    Web --> IC
+    subgraph Adapters["Interface Adapters"]
+        BR["BookingRepositoryPostgres «adapter»"]
+        AWR["AvailabilityWindowRepositoryPostgres «adapter»"]
+        QR["QuotaRepositoryPostgres «adapter»"]
+        WSR["WorkspaceRepositoryPostgres «adapter»"]
+        WLR["WaitlistRepositoryPostgres «adapter»"]
+        ALR["AuditLogRepositoryPostgres «adapter»"]
+    end
 
-    %% Controllers -> Use Cases
-    BC --> CBU
-    AIC --> CBUI
-    AC --> SQ
-    AC --> MW
-    AC --> BH
-    RC --> GR
-    IC --> SPU
+    subgraph Infra["Frameworks & Drivers"]
+        DB[(PostgreSQL)]
+    end
 
-    %% Agendador -> Use Cases
-    Cron --> REU
-    Cron --> GDA
+    %% Relações
+    UCs --> BRif & AWRif & QRif & WSRif & WLif & ALRif
 
-    %% Use Cases -> Domínio
-    CBU --> BK
-    CBU --> AW
-    CBU --> QP
-    CBU --> BRif
-    CBU --> AWRif
-    CBU --> QRif
-
-    CBUI --> BK
-    CBUI --> AW
-
-    CBU2 --> BK
-    CBU2 --> AW
-    CBU2 --> QP
-
-    REU --> AW
-    REU --> BK
-    REU --> NW
-
-    NW --> WL
-    NW --> WLif
-
-    SQ --> QP
-    SQ --> QRif
-
-    MW --> WS
-    MW --> WSRif
-
-    GR --> BRif
-    GR --> WSRif
-    GR --> QRif
-
-    SPU --> BK
-    SPU --> ALRif
-
-    BH --> HL
-    BH --> AWRif
-
-    GDA --> AWRif
-    GDA --> HL
-
-    %% Inversão de Dependência (Adapters implementam Interfaces do Domínio)
     BRif -. implementa .-> BR
     AWRif -. implementa .-> AWR
     QRif -. implementa .-> QR
@@ -769,26 +739,49 @@ flowchart TB
     WLif -. implementa .-> WLR
     ALRif -. implementa .-> ALR
 
-    %% Adapters de Persistência -> Banco de Dados
-    BR --> DB
-    AWR --> DB
-    QR --> DB
-    WSR --> DB
-    WLR --> DB
-    ALR --> DB
-
-    %% Eventos e Notificações (SSE)
-    CBU --> SSEPub
-    CBUI --> SSEPub
-    CBU2 --> SSEPub
-    REU --> SSEPub
-    NW --> SSEPub
-    SSEPub --> SSEServer
-
-    %% Integrações e Serviços Adicionais
-    AIC --> QRGen
-    SPU --> PointExt
+    BR & AWR & QR & WSR & WLR & ALR --> DB
 ```
+
+**Visão de Tarefas de Segundo Plano e Integrações**
+
+```mermaid
+flowchart TB
+    subgraph Infra_In["Drivers de Entrada / Gatilhos"]
+        Cron["Scheduler / APScheduler"]
+        IC["IntegrationController «boundary»"]
+    end
+
+    subgraph Application["Application"]
+        REU["ReleaseExpiredBookingsUseCase «cron»"]
+        GDA["GenerateDailyAvailabilityUseCase «cron»"]
+        NW[NotifyWaitlistUseCase]
+        SPU[SyncPointUseCase]
+        AllUCs["Outros Casos de Uso"]
+    end
+
+    subgraph Adapters["Interface Adapters"]
+        SSEPub["SsePublisher «adapter»"]
+    end
+
+    subgraph Infra_Out["Sistemas & Serviços Externos"]
+        SSEServer[SSE Stream]
+        QRGen[QR Code Generator]
+        PointExt[Sistema de Ponto Externo]
+    end
+
+    %% Agendadores e Integração
+    Cron --> REU & GDA
+    IC --> SPU
+    REU --> NW
+
+    %% Saídas e Eventos
+    AllUCs & REU & NW --> SSEPub
+    SSEPub --> SSEServer
+    
+    SPU --> PointExt
+    AIC_Ref["CheckInController"] --> QRGen
+```
+
 
 **Nota sobre dependências de `GenerateReportUseCase`:** o use case de relatório não depende de entidades de domínio (Booking, Workspace) diretamente — depende das interfaces de repository (`BRif`, `WSRif`, `QRif`) para manter a regra de dependência (use case não conhece implementação). Os dados fluem dos repositories para o use case, nunca o inverso.
 
