@@ -1,4 +1,4 @@
-# AGENTS.md — Guia para Agentes de IA
+# AGENTS.md — Guia para agentes de IA
 
 Este guia define convenções, comandos e regras de decisão para agentes de IA que trabalham no projeto DeskFlow.
 
