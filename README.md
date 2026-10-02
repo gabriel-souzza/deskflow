@@ -144,21 +144,30 @@ CANCELLATION_MINIMUM_HOURS=2
 SLOT_DURATION_MINUTES=15
 ```
 
-## Instalação
+## Instalação (uv - gerenciador de pacotes moderno)
 
 ```bash
-# Backend
-cd src
-pip install -r requirements.txt
-alembic upgrade head
+# Backend - instala dependências com uv (3-5x mais rápido que pip)
+uv sync --all-extras --no-dev
+uv run alembic upgrade head
 
 # Frontend
 cd apps/web
 npm install
 
 # Testes
-pytest src/tests/domain -v
-pytest src/tests/application -v
+uv run pytest src/tests/domain -v
+uv run pytest src/tests/application -v
+```
+
+## Execução com Docker Compose
+
+```bash
+# Subir API + PostgreSQL
+docker-compose up -d
+
+# Ver logs
+docker-compose logs -f api
 ```
 
 ## Licença
