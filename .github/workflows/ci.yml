@@ -21,8 +21,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
       - name: Install dependencies
+        working-directory: backend
         run: uv sync --all-extras --dev
       - name: Run migrations
+        working-directory: backend
         run: uv run alembic upgrade head
       - name: Run tests
+        working-directory: backend
         run: uv run pytest src/tests/domain src/tests/application -v
