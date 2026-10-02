@@ -3,6 +3,7 @@ from typing import Optional
 from uuid import UUID
 
 from domain.entities.waitlist import Waitlist
+from domain.value_objects.time_slot import TimeSlot
 
 
 class WaitlistRepository(ABC):
@@ -20,7 +21,7 @@ class WaitlistRepository(ABC):
         self,
         workspace_id: UUID,
         employee_id: UUID,
-        desired_slot: "WaitlistSlot",  # Value Object
+        desired_slot: TimeSlot,
     ) -> Waitlist:
         """Create a new waitlist entry."""
         ...

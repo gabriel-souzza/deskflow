@@ -1,0 +1,2 @@
+class WaitlistHandler:
+    pass

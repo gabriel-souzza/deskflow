@@ -1,5 +1,5 @@
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Optional
@@ -23,13 +23,13 @@ class Booking:
     """
 
     id: UUID = field(default_factory=uuid4)
-    workspace_id: UUID = None
-    employee_id: UUID = None
-    cost_center_id: UUID = None
-    slot: TimeSlot = None
+    workspace_id: UUID = field(default=None, kw_only=True)
+    employee_id: UUID = field(default=None, kw_only=True)
+    cost_center_id: UUID = field(default=None, kw_only=True)
+    slot: TimeSlot = field(default=None, kw_only=True)
     status: BookingStatus = BookingStatus.PENDING
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    modified_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    modified_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     qr_token: Optional[str] = None
 
     def __post_init__(self):
@@ -41,7 +41,7 @@ class Booking:
             raise ValueError("cost_center_id is required")
         if self.slot is None:
             raise ValueError("slot is required")
-        if self.status not in BookingStatus:
+        if not isinstance(self.status, BookingStatus):
             raise ValueError(f"Invalid status: {self.status}")
 
     def confirm(self) -> "Booking":
@@ -51,7 +51,7 @@ class Booking:
         return _replace(
             self,
             status=BookingStatus.CONFIRMED,
-            modified_at=datetime.now(datetime.timezone.utc),
+            modified_at=datetime.now(UTC),
         )
 
     def cancel(self) -> "Booking":
@@ -61,7 +61,7 @@ class Booking:
         return _replace(
             self,
             status=BookingStatus.CANCELLED,
-            modified_at=datetime.now(datetime.timezone.utc),
+            modified_at=datetime.now(UTC),
         )
 
     def expire(self) -> "Booking":
@@ -71,7 +71,7 @@ class Booking:
         return _replace(
             self,
             status=BookingStatus.EXPIRED,
-            modified_at=datetime.now(datetime.timezone.utc),
+            modified_at=datetime.now(UTC),
         )
 
     @property
@@ -81,8 +81,6 @@ class Booking:
 
 def _replace(obj, **changes):
     """Helper to preserve immutability while updating fields."""
-    from dataclasses import replace
-
     return replace(obj, **changes)
 
 

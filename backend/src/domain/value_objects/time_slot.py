@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Tuple, Iterator
+from typing import Iterator
 
 
 @dataclass(frozen=True, slots=True)
@@ -10,6 +10,7 @@ class TimeSlot:
     Value Object representing a 15-minute time slot.
     Invariant I1: Slot must be aligned to 15-minute grid.
     """
+
     start: datetime
     end: datetime
 
@@ -21,6 +22,8 @@ class TimeSlot:
             raise ValueError(f"End time must be on 15-minute boundary: {self.end}")
         if self.start.second != 0 or self.end.second != 0:
             raise ValueError("Seconds must be zero")
+        if self.start.microsecond != 0 or self.end.microsecond != 0:
+            raise ValueError("Microseconds must be zero")
         if self.start >= self.end:
             raise ValueError("Start time must be before end time")
         # Ensure duration is a multiple of 15 minutes
@@ -41,7 +44,7 @@ class TimeSlot:
         current = self.start
         while current < self.end:
             yield current
-            current = current.replace(minute=current.minute + 15)
+            current += timedelta(minutes=15)
 
     @property
     def duration_hours(self) -> Decimal:
