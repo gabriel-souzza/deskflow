@@ -170,6 +170,18 @@ docker-compose up -d
 docker-compose logs -f api
 ```
 
+## Status do Backend (Atualizado)
+
+O backend está construído seguindo a arquitetura **Clean Architecture + DDD + TDD** definida no `documento-software.md`:
+
+- **Domínio (`src/domain/`)**: 8 entidades + 2 VO + 6 repos ABC
+- **Application**: 10 use cases completos
+- **Adapters**: 4 controllers + 3 repos + 4 events
+- **Infra**: `database.py`, `security.py`, `qr_generator.py`, `migrations/`
+- **DevOps**: `uv`, Docker, docker-compose
+
+**Correções aplicadas**: `Decimal`, `utcnow()` deprecated, `seats_available` duplicado, `employee.py` conflito, `time_slot.py` tipo.
+
 ## Licença
 
 Proprietário — confidencial.

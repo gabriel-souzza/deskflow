@@ -5,7 +5,23 @@ Todas as mudanças notáveis neste projeto são documentadas aqui.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
-## [Unreleased]
+### Adicionado
+- Backend completo (Clean Architecture + DDD + TDD): 8 entidades, 2 VO, 6 repos ABC, 10 use cases, 4 controllers, 3 repos PostgreSQL, 4 event handlers
+- DevOps: Dockerfile multistage (uv), docker-compose.yml (API + PostgreSQL 16), .env.example
+- Alembic: env.py + migrations/versions/001_create_initial_schema.py (9 tabelas DER)
+- SQLAlchemy 2.0 ORM: infra/models.py (workspaces, bookings, availability_windows, etc.)
+- Testes: domain (TimeSlot, QuotaPeriod, Booking, Capacity), application (CreateBookingUseCase), adapter (TestClient), integration (PostgreSQL placeholder)
+- README atualizado com uv, Docker Compose, arquitetura
+- docs/plano-implementacao-backend.md (plano completo)
+
+### Corrigido
+- `Booking.py`: Decimal importado, datetime.utcnow() → timezone.utc, kw_only/default corrigido, replace importado no topo
+- `time_slot.py`: slots() tipo Iterator (não Tuple)
+- `employee.py`: conflito de nome `is_eligible_for_booking` resolvido
+- `availability_window.py`: seats_available duplicado removido
+- `main.py`: criado com FastAPI + 4 routers
+
+## [0.1.0] - 2026-10-02
 
 ### Em Andamento
 - Sprint 1 — Fundação do Domínio (TDD red→green→refactor para TimeSlot, AvailabilityWindow, QuotaPeriod, Booking)
