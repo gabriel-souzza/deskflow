@@ -28,4 +28,4 @@ jobs:
         run: uv run --project . alembic -c src/infra/migrations/alembic.ini upgrade head
       - name: Run tests
         working-directory: ./backend
-        run: uv run --project . pytest src/tests/domain src/tests/application -v
+        run: uv run --project . pytest src/tests/domain src/tests/application -v --cov=src --cov-fail-under=80 --cov-report=term

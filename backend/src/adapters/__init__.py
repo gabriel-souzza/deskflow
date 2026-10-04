@@ -1,0 +1,1 @@
+from adapters.controllers import booking_controller, checkin_controller, admin_controller, report_controller

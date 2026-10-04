@@ -91,16 +91,22 @@ src/
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
 | GET | `/api/v1/workspaces` | Listar espaços disponíveis |
-| GET | `/api/v1/workspaces/{id}/availability` | Disponibilidade por dia |
-| POST | `/api/v1/bookings` | Criar reserva |
-| POST | `/api/v1/bookings/{id}/checkin` | Check-in via QR Code |
-| DELETE | `/api/v1/bookings/{id}` | Cancelar reserva (2h antecedência) |
-| GET | `/api/v1/reports/utilization` | Dashboard de utilização |
-| GET | `/api/v1/reports/export` | Exportar CSV/PDF |
-| GET | `/api/v1/admin/quotas` | Listar quotas por centro de custo |
-| PUT | `/api/v1/admin/quotas/{id}` | Configurar quota |
-| POST | `/api/v1/admin/workspaces` | Cadastrar espaço |
-| GET | `/api/v1/availability/stream` | SSE stream de atualizações |
+| GET | `/api/v1/workspaces/{id}/availability?day=YYYY-MM-DD` | Disponibilidade em slots de 15 min |
+| POST | `/api/v1/bookings` | Criar reserva `PENDING`; parâmetros: `workspace_id`, `employee_id`, `cost_center_id`, `slot_start`, `slot_end`; retorna `qr_token` assinado |
+| POST | `/api/v1/bookings/{id}/checkin?qr_token=...` | Validar token QR e confirmar reserva dentro da tolerância |
+| DELETE | `/api/v1/bookings/{id}` | Cancelar reserva com pelo menos 2h de antecedência e devolver a cota |
+| GET | `/api/v1/reports/utilization?day=YYYY-MM-DD` | Dashboard calculado a partir das reservas persistidas (admin) |
+| GET | `/api/v1/reports/export?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&format=csv\|pdf` | Baixar relatório CSV ou PDF (admin) |
+| GET | `/api/v1/admin/quotas` | Listar períodos de cota (admin) |
+| PUT | `/api/v1/admin/quotas/{cost_center_id}` | Definir cota mensal; JSON: `{"monthly_quota_hours": 40}` (admin) |
+| POST | `/api/v1/admin/workspaces` | Cadastrar espaço (admin) |
+| GET | `/api/v1/availability/stream` | SSE com eventos de reservas e espaços |
+| GET | `/docs` | Swagger / OpenAPI (interativo) |
+| GET | `/redoc` | ReDoc (alternativo) |
+| GET | `/openapi.json` | Schema OpenAPI JSON |
+| GET | `/health` | Health check (status 200) |
+
+Rotas administrativas e relatórios exigem `Authorization: Bearer <token>` com papel `admin`. Antes de usar a API, configure `DATABASE_URL` e aplique as migrações Alembic. O login atual usa credenciais demonstrativas e não deve ser tratado como autenticação pronta para produção. O stream SSE é mantido em memória por processo; com múltiplas instâncias, use um barramento compartilhado para distribuir eventos. `/health` verifica apenas se o processo responde, não a conexão com o banco.
 
 ## Testes
 
@@ -130,6 +136,38 @@ Cada RF tem pelo menos um teste de domínio que valida a regra de negócio e um 
 | `docs/escopo-arquitetura-deskflow.md` | Escopo funcional e arquitetura técnica |
 | `docs/deskflow_ideacao_arquitetura.md` | Decisões arquiteturais (Ramo A/B/C) |
 | `docs/documento-software.md` | Especificação completa (requisitos, UML, DDD, TDD) |
+| `docs/plano-implementacao-backend.md` | Plano de implementação do backend (status, lacunas, TDD) |
+
+## Documentação da API
+
+A API é documentada automaticamente pelo **FastAPI** via **OpenAPI**:
+
+- **Swagger UI** (interativo): `http://localhost:8000/docs`
+- **ReDoc**: `http://localhost:8000/redoc`
+- **OpenAPI JSON**: `http://localhost:8000/openapi.json`
+
+## Segurança
+
+- **Autenticação**: JWT (HS256) via `infra/security.py`
+- **Hashing**: SHA-256 (production should use bcrypt)
+- **HTTPS**: Obrigatório em produção (configuração do reverse proxy)
+- **Tokens**: Emissão e validação de JWT para autorização de requisições protegidas
+
+## Cobertura de Testes
+
+Meta: **80% de cobertura** mantida para assegurar a confiabilidade das alterações.
+
+- **Domain**: `src/tests/domain/` — invariantes I1-I6, Value Objects
+- **Application**: `src/tests/application/` — use cases, orquestração de agregados
+- **Adapter**: `src/tests/adapters/` — FastAPI TestClient
+- **Integration**: `src/tests/integration/` — PostgreSQL real
+
+```bash
+# Executar com cobertura
+cd backend
+uv run pytest src/tests -v --cov=src --cov-report=term-missing --cov-fail-under=80
+```
+
 
 ## Configuração
 

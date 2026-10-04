@@ -1,0 +1,3 @@
+from adapters.repositories.booking_repo_postgres import BookingRepositoryPostgres
+from adapters.repositories.availability_window_repo_postgres import AvailabilityWindowRepositoryPostgres
+from adapters.repositories.quota_repo_postgres import QuotaRepositoryPostgres

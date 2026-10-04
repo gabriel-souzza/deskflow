@@ -6,6 +6,9 @@ O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.
 e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
+- Endpoints de espaços, disponibilidade, cancelamento, administração, relatórios e SSE com dados persistidos no PostgreSQL
+- Check-in QR assinado, controle de cota/capacidade transacional e testes de API com SQLite
+- Exportação de relatórios em CSV e PDF
 - Backend completo (Clean Architecture + DDD + TDD): 8 entidades, 2 VO, 6 repos ABC, 10 use cases, 4 controllers, 3 repos PostgreSQL, 4 event handlers
 - DevOps: Dockerfile multistage (uv), docker-compose.yml (API + PostgreSQL 16), .env.example
 - Alembic: env.py + migrations/versions/001_create_initial_schema.py (9 tabelas DER)

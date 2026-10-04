@@ -9,8 +9,8 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/deskflow
-      - SECRET_KEY=${SECRET_KEY:-changeme}
-      - JWT_SECRET=${JWT_SECRET:-changeme}
+      - SECRET_KEY=${SECRET_KEY:-deskflow-dev-secret}
+      - JWT_SECRET=${JWT_SECRET:-deskflow-dev-secret-key-2026-longer-than-32}
       - SSE_HEARTBEAT_INTERVAL=30
       - CHECKIN_TOLERANCE_MINUTES=10
       - CANCELLATION_MINIMUM_HOURS=2
@@ -32,7 +32,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
