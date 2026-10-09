@@ -1,3 +1,7 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -9,9 +13,35 @@ from adapters.controllers.checkin_controller import router as checkin_router
 from adapters.controllers.report_controller import router as report_router
 from adapters.controllers.workspace_controller import router as workspace_router
 from adapters.events.sse_publisher import sse_publisher
+from adapters.repositories.booking_repo_postgres import BookingRepositoryPostgres
+from application.use_cases.release_expired import ReleaseExpiredBookingsUseCase
+from infra.database import SessionLocal
 from infra.security import create_access_token, hash_password, verify_password, verify_token
 
 security = HTTPBearer(auto_error=False)
+
+
+async def release_expired_bookings_job() -> None:
+    async with SessionLocal() as session:
+        await ReleaseExpiredBookingsUseCase(BookingRepositoryPostgres(session)).execute()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        release_expired_bookings_job,
+        "interval",
+        minutes=1,
+        id="release-expired-bookings",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.start()
+    try:
+        yield
+    finally:
+        scheduler.shutdown(wait=False)
 
 
 class LoginRequest(BaseModel):
@@ -48,6 +78,7 @@ Workspace reservation system for hybrid work environments.
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
 app.include_router(booking_router)

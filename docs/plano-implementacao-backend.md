@@ -4,7 +4,7 @@ Baseado em `documento-software.md`, `deskflow_ideacao_arquitetura.md`, `escopo-a
 
 ---
 
-## 1. STATUS ATUAL (BACKEND 100%)
+## 1. STATUS ATUAL (BACKEND EM IMPLEMENTAÇÃO)
 
 ### 1.1 DevOps
 - [x] `Dockerfile` (multi-stage com uv)
@@ -62,7 +62,8 @@ Conforme `documento-software.md` e `escopo-arquitetura-deskflow.md`:
 | **Testes Adapter completos** | `tests/adapters/` com `TestClient` real para todos os controllers | Placeholder existente; não bloqueia deploy |
 | **Testes Integration completos** | `tests/integration/` com `Testcontainers` PostgreSQL | Placeholder existente |
 | **Monitoramento / Métricas** | Prometheus, logging estruturado (`structlog`) | Documentado em `escopo-arquitetura-deskflow.md` §2; não implementado |
-| **Scheduler (cron)** | `APScheduler` para UC15 (`ReleaseExpiredBookingsUseCase`) e UC16 (`GenerateDailyAvailability`) | Implementação de cron não incluída; use cases existem |
+| **Geração diária (UC16)** | `GenerateDailyAvailabilityUseCase` + job diário | Use case ainda não implementado; sem geração automática de janelas |
+| **Notificação da fila (UC05)** | `NotifyWaitlistUseCase` + eventos SSE | Use case ainda não implementado; vagas liberadas não notificam a fila |
 
 ---
 
@@ -129,4 +130,4 @@ O backend do **DeskFlow** está construído conforme a especificação completa 
 - **TDD**: Pirâmide de testes implementada (`domain` → `application` → `adapter` → `integration`)
 - **DevOps**: Containerização com `Docker` + `Docker Compose` + `uv`
 
-**Não há lacunas bloqueantes para o funcionamento da API REST e do motor de agendamento.** As lacunas restantes (`frontend`, `cron scheduler`, `monitoramento`) são complementares e não impedem o deploy do backend.
+**A API REST está disponível, mas o backend ainda não está completo.** A expiração de reservas sem check-in agora roda a cada minuto via APScheduler. Permanecem lacunas funcionais em geração diária de disponibilidade, notificação da fila, frontend, monitoramento e testes de integração.

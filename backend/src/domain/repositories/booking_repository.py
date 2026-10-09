@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional
+from datetime import datetime
 from uuid import UUID
 
 from domain.entities.booking import Booking
@@ -7,7 +7,7 @@ from domain.entities.booking import Booking
 
 class BookingRepository(ABC):
     @abstractmethod
-    async def get_by_id(self, booking_id: UUID) -> Optional[Booking]:
+    async def get_by_id(self, booking_id: UUID) -> Booking | None:
         """Retrieve a booking by its ID."""
         ...
 
@@ -19,6 +19,15 @@ class BookingRepository(ABC):
     @abstractmethod
     async def delete_by_booking(self, booking_id: UUID) -> None:
         """Delete the BookingWindow associations for a given booking."""
+        ...
+
+    @abstractmethod
+    async def find_pending_expired(
+        self,
+        station_cutoff: datetime,
+        meeting_room_cutoff: datetime,
+    ) -> list[Booking]:
+        """Find pending bookings past the check-in grace period for their workspace type."""
         ...
 
     @abstractmethod

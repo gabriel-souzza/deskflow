@@ -8,11 +8,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 COPY pyproject.toml ./
 COPY uv.lock* ./
+COPY src/ ./src/
 
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -e .[dev]
-
-COPY src/ ./src/
 
 EXPOSE 8000
 
