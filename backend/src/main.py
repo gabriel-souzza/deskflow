@@ -1,3 +1,4 @@
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -6,6 +7,8 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.controllers.admin_controller import router as admin_router
 from adapters.controllers.booking_controller import router as booking_router
@@ -15,8 +18,9 @@ from adapters.controllers.workspace_controller import router as workspace_router
 from adapters.events.sse_publisher import sse_publisher
 from adapters.repositories.booking_repo_postgres import BookingRepositoryPostgres
 from application.use_cases.release_expired import ReleaseExpiredBookingsUseCase
-from infra.database import SessionLocal
-from infra.security import create_access_token, hash_password, verify_password, verify_token
+from infra.database import SessionLocal, get_db
+from infra.models import EmployeeORM
+from infra.security import create_access_token, verify_password, verify_token
 
 security = HTTPBearer(auto_error=False)
 
@@ -101,16 +105,23 @@ async def availability_stream():
 
 
 @app.post("/api/v1/auth/login")
-async def login(payload: LoginRequest):
-    demo_user = {
-        "admin": hash_password("admin123"),
-        "employee": hash_password("deskflow123"),
-    }
-    hashed_password = demo_user.get(payload.username)
-    if hashed_password is None or not verify_password(payload.password, hashed_password):
+async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
+    demo_passwords = {"admin": "admin123", "employee": "deskflow123"}
+    demo_password = demo_passwords.get(payload.username)
+    if demo_password is not None and secrets.compare_digest(payload.password, demo_password):
+        token = create_access_token({"sub": payload.username, "role": payload.username})
+        return {"access_token": token, "token_type": "bearer"}
+
+    email = payload.username.strip().casefold()
+    employee = await db.scalar(select(EmployeeORM).where(EmployeeORM.email == email))
+    if employee is None or not employee.password_hash:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not verify_password(payload.password, employee.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = create_access_token({"sub": payload.username, "role": payload.username})
+    token = create_access_token(
+        {"sub": str(employee.id), "role": "employee", "employee_id": str(employee.id)}
+    )
     return {"access_token": token, "token_type": "bearer"}
 
 

@@ -1,5 +1,7 @@
 import hashlib
+import hmac
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -21,9 +23,24 @@ def verify_token(token: str) -> dict:
 
 
 def hash_password(password: str) -> str:
-    """Hash a password using SHA-256 (production should use bcrypt)."""
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    """Hash a password with PBKDF2-HMAC-SHA256 and a unique random salt."""
+    iterations = 310_000
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
 
 
 def verify_password(password: str, hashed: str) -> bool:
-    return hash_password(password) == hashed
+    try:
+        scheme, iterations_text, salt_hex, digest_hex = hashed.split("$")
+        if scheme != "pbkdf2_sha256":
+            return False
+        digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            bytes.fromhex(salt_hex),
+            int(iterations_text),
+        )
+        return hmac.compare_digest(digest.hex(), digest_hex)
+    except (ValueError, TypeError):
+        return False

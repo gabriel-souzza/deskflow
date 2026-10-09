@@ -3,6 +3,7 @@
 Todas as mudanças notáveis neste projeto são documentadas aqui.
 
 ### Adicionado
+- Cadastro administrativo de contas de colaboradores com senha PBKDF2 e login persistido por email
 - Endpoints de espaços, disponibilidade, cancelamento, administração, relatórios e SSE com dados persistidos no PostgreSQL
 - Check-in QR assinado, controle de cota/capacidade transacional e testes de API com SQLite
 - Exportação de relatórios em CSV e PDF

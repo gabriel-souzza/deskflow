@@ -17,6 +17,7 @@
 | RF13 | Sistema deve gerar slots de disponibilidade diários (08:00–18:00) | Alta | Sistema |
 | RF14 | Sistema deve bloquear feriados e pontos facultativos | Média | Sistema |
 | RF15 | Sistema deve enviar alertas de limite de cota (80%/95%) | Média | Sistema |
+| RF16 | Administrador deve criar conta de colaborador com email e senha, vinculada a centro de custo | Alta | Administrador |
 
 | ID | Descrição | Prioridade | Ator/Origem |
 |----|-----------|-----------|-------------|
@@ -53,6 +54,7 @@ flowchart LR
     Admin --> UC12[Gerenciar Espaços]
     Admin --> UC13[Visualizar Dashboard]
     Admin --> UC14[Exportar Relatórios]
+    Admin --> UC19[Criar Conta de Colaborador]
     Sys --> UC15[Liberar Reservas Expiradas]
     Sys --> UC16[Gerar Disponibilidade Diária]
     Sys --> UC17[Bloquear Feriados]
@@ -71,6 +73,7 @@ flowchart LR
 - **UC16 Gerar Disponibilidade Diária**: Ator: Sistema (cron diário às 00:00). Pré-condição: nenhum. Fluxo: `GenerateDailyAvailabilityUseCase.execute` para cada Workspace gera 40 AvailabilityWindows (08:00–18:00, grid 15min) com `seats = workspace.capacity`. Pós-condição: 40 janelas inseridas por workspace ativo.
 - **UC17 Bloquear Feriados**: Ator: Administrador. Pré-condição: autenticado. Fluxo: cadastra Holiday com data e descrição → `BlockHolidaysUseCase.execute` remove AvailabilityWindows do dia (se existirem) → marca o dia como bloqueado. Pós-condição: nenhum slot disponível para reserva nesse dia.
 - **UC18 Validar Política Presencial**: Ator: Sistema de Ponto (externo). Pré-condição: sincronização periódica. Fluxo: API REST envia registros de ponto → `SyncPointUseCase.execute` valida elegibilidade do colaborador para o dia (regra dos 3 dias presenciais) → atualiza `Employee.is_eligible_for_booking`. Pós-condição: Employee atualizado com política vigente.
+- **UC19 Criar Conta de Colaborador**: Ator: Administrador autenticado. Pré-condição: centro de custo existente. Fluxo: informa nome, email, senha e centro de custo → sistema normaliza e valida email, rejeita duplicidade, armazena senha com hash PBKDF2 e cria Employee; elegibilidade é definida somente pelo administrador. Pós-condição: colaborador pode autenticar via email/senha e recebe JWT de papel `employee`.
 - **UC06 Check-in via QR Code**: Ator: Colaborador. Pré-condição: reserva PENDING válida. Fluxo: leitura QR → validação token (UC07) → confirmação (UC08). Pós-condição: status CONFIRMED, intenção efetivada.
 - **UC09 Cancelar Reserva**: Ator: Colaborador. Pré-condição: reserva CONFIRMED com >2h. Fluxo: verifica antecedência (UC10) → cancelamento devolve cota e libera janela. Pós-condição: status CANCELLED, quota liberada.
 - **UC11 Configurar Cotas**: Ator: Administrador. Pré-condição: centro de custo existente. Fluxo: define quota mensal (horas-estação) para período. Pós-condição: QuotaPeriod criado/atualizado com total_hours definido.
@@ -972,6 +975,7 @@ src/
 | RF13 | UC16 | `AvailabilityWindow.slots()` gera 40 slots/dia | `GenerateDailyAvailabilityUseCase.execute` | Postgres tem 40 rows/dia por workspace |
 | RF14 | UC17 | `Holiday.is_blocked()` retorna true | `BlockHolidaysUseCase.execute` | Janela do feriado indisponível |
 | RF15 | UC11 | `QuotaPeriod.consumed_hours` atingindo 80% | Handler `QuotaAlertHandler` publica alerta e-mail/Slack via `SsePublisher` (AuditLogRepository apenas registra) | E-mail/Slack enviado quando `QuotaAlertEvent` é publicado |
+| RF16 | UC19 | Email único e senha armazenada somente como hash | `POST /api/v1/admin/accounts` cria Employee vinculado ao centro de custo | Login com email/senha retorna JWT de colaborador |
 
 ### 11.3 Matriz de Rastreabilidade UC → Entity → Diagrama
 
@@ -995,10 +999,11 @@ src/
 | UC16 | AvailabilityWindow, Holiday | §3 | §3.1 | — | — | — |
 | UC17 | Holiday, AvailabilityWindow | §3 | §3.1 | — | — | — |
 | UC18 | Employee, AuditLog | §3 | §3.1 | — | — | — |
+| UC19 | Employee, CostCenter | §3 | §3.1 | — | — | — |
 
 ## Checklist final do documento
 
-- [x] 1. Requisitos funcionais e não funcionais (tabela RF01-RF15, RNF01-RNF07)
+- [x] 1. Requisitos funcionais e não funcionais (tabela RF01-RF16, RNF01-RNF07)
 - [x] 2. Diagrama de casos de uso com atores, include, extend
 - [x] 3. Descrição textual dos casos de uso principais (pré/pós-condição, fluxos)
 - [x] 4. Diagrama de classes com composição, agregação, herança e multiplicidades
@@ -1018,7 +1023,7 @@ src/
 - [x] 18. Matriz de rastreabilidade UC → entity → diagrama
 
 **Rastreabilidade final:**
-- RF01-RF15 → UC01-UC18 (seção 2) → testes TDD (seção 10)
+- RF01-RF16 → UC01-UC19 (seção 2) → testes TDD (seção 10)
 - Cada entity do DER (seção 3.1) tem teste de invariante (I1-I6)
 - Cada use case (seção 6) tem diagrama de sequência (seção 7)
 - Cada aggregate root (seção 10 DDD) tem repository interface + implementação

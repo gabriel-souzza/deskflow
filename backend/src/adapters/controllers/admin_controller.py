@@ -1,16 +1,18 @@
+import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infra.database import get_db
-from infra.models import CostCenterORM, QuotaPeriodORM
-from infra.security import verify_token
+from infra.models import CostCenterORM, EmployeeORM, QuotaPeriodORM
+from infra.security import hash_password, verify_token
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 security = HTTPBearer(auto_error=False)
@@ -35,6 +37,67 @@ async def require_admin(user=Depends(require_auth)):
 
 class QuotaUpdate(BaseModel):
     monthly_quota_hours: Decimal = Field(ge=0)
+
+
+class AccountCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=12, max_length=128)
+    cost_center_id: UUID
+    is_eligible_for_booking: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Name cannot be blank")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        value = value.strip().casefold()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError("Invalid email address")
+        return value
+
+
+@router.post("/accounts", status_code=201)
+async def create_account(
+    payload: AccountCreate,
+    _user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    cost_center = await db.get(CostCenterORM, payload.cost_center_id)
+    if cost_center is None:
+        raise HTTPException(status_code=404, detail="Cost center not found")
+
+    existing = await db.scalar(select(EmployeeORM).where(EmployeeORM.email == payload.email))
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="Email is already registered")
+
+    employee = EmployeeORM(
+        name=payload.name,
+        email=payload.email,
+        password_hash=hash_password(payload.password),
+        cost_center_id=payload.cost_center_id,
+        is_eligible_for_booking=payload.is_eligible_for_booking,
+    )
+    db.add(employee)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Email is already registered") from exc
+    await db.refresh(employee)
+    return {
+        "id": str(employee.id),
+        "name": employee.name,
+        "email": employee.email,
+        "cost_center_id": str(employee.cost_center_id),
+        "is_eligible_for_booking": employee.is_eligible_for_booking,
+    }
 
 
 @router.get("/quotas")

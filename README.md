@@ -97,6 +97,8 @@ src/
 | DELETE | `/api/v1/bookings/{id}` | Cancelar reserva com pelo menos 2h de antecedência e devolver a cota |
 | GET | `/api/v1/reports/utilization?day=YYYY-MM-DD` | Dashboard calculado a partir das reservas persistidas (admin) |
 | GET | `/api/v1/reports/export?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&format=csv\|pdf` | Baixar relatório CSV ou PDF (admin) |
+| POST | `/api/v1/admin/accounts` | Criar conta de colaborador vinculada a centro de custo (admin); JSON com `name`, `email`, `password`, `cost_center_id` e `is_eligible_for_booking` opcional |
+| POST | `/api/v1/auth/login` | Autenticar conta por email e senha; para testes, o campo `username` recebe o email cadastrado |
 | GET | `/api/v1/admin/quotas` | Listar períodos de cota (admin) |
 | PUT | `/api/v1/admin/quotas/{cost_center_id}` | Definir cota mensal; JSON: `{"monthly_quota_hours": 40}` (admin) |
 | POST | `/api/v1/admin/workspaces` | Cadastrar espaço (admin) |
@@ -106,7 +108,7 @@ src/
 | GET | `/openapi.json` | Schema OpenAPI JSON |
 | GET | `/health` | Health check (status 200) |
 
-Rotas administrativas e relatórios exigem `Authorization: Bearer <token>` com papel `admin`. Antes de usar a API, configure `DATABASE_URL` e aplique as migrações Alembic. O login atual usa credenciais demonstrativas e não deve ser tratado como autenticação pronta para produção. O stream SSE é mantido em memória por processo; com múltiplas instâncias, use um barramento compartilhado para distribuir eventos. `/health` verifica apenas se o processo responde, não a conexão com o banco.
+Rotas administrativas e relatórios exigem `Authorization: Bearer <token>` com papel `admin`. Para criar uma conta no Swagger, autentique-se primeiro com `admin` / `admin123`, autorize com o JWT e chame `POST /api/v1/admin/accounts` com um centro de custo existente. A senha precisa ter pelo menos 12 caracteres; o cadastro não concede elegibilidade por padrão. O login demo `admin` / `admin123` é apenas para desenvolvimento. O stream SSE é mantido em memória por processo; com múltiplas instâncias, use um barramento compartilhado para distribuir eventos. `/health` verifica apenas se o processo responde, não a conexão com o banco.
 
 ## Testes
 
@@ -149,7 +151,7 @@ A API é documentada automaticamente pelo **FastAPI** via **OpenAPI**:
 ## Segurança
 
 - **Autenticação**: JWT (HS256) via `infra/security.py`
-- **Hashing**: SHA-256 (production should use bcrypt)
+- **Hashing**: PBKDF2-HMAC-SHA256 com salt aleatório para senhas de contas
 - **HTTPS**: Obrigatório em produção (configuração do reverse proxy)
 - **Tokens**: Emissão e validação de JWT para autorização de requisições protegidas
 
@@ -201,12 +203,14 @@ uv run pytest src/tests/application -v
 ## Execução com Docker Compose
 
 ```bash
-# Subir API + PostgreSQL
-docker-compose up -d
+# Subir API, PostgreSQL e pgAdmin
+docker compose up -d --build
 
 # Ver logs
-docker-compose logs -f api
+docker compose logs -f api
 ```
+
+O pgAdmin fica em `http://localhost:5050` (email `admin@deskflow.com`, senha `deskflow-dev-pgadmin` por padrão de desenvolvimento). Para registrar o servidor, use host `db`, porta `5432`, database `deskflow`, usuário `postgres` e senha `postgres`. Esses valores padrão são apenas para desenvolvimento; defina `PGADMIN_DEFAULT_EMAIL` e `PGADMIN_DEFAULT_PASSWORD` no `.env` para substituí-los.
 
 ## Status do Backend (Atualizado)
 

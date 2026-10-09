@@ -1,9 +1,11 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Numeric, Text, UUID as SA_UUID
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.asyncio import AsyncAttrs
-from sqlalchemy.orm import DeclarativeBase
-from datetime import datetime
 import uuid
+from datetime import datetime
+
+from sqlalchemy import UUID as SA_UUID
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlalchemy.orm import DeclarativeBase, relationship
+
 
 class Base(DeclarativeBase):
     pass
@@ -63,7 +65,8 @@ class EmployeeORM(Base):
     __tablename__ = "employees"
     id = Column(SA_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
-    email = Column(String, nullable=False)
+    email = Column(String, nullable=False, unique=True)
+    password_hash = Column(String, nullable=True)
     cost_center_id = Column(SA_UUID(as_uuid=True), ForeignKey("cost_centers.id"))
     is_eligible_for_booking = Column(Boolean, default=False)
 

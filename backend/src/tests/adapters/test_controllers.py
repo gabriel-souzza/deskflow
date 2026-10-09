@@ -220,6 +220,48 @@ def test_admin_quotas_requires_authentication(api_client):
     assert response.status_code == 401
 
 
+def test_admin_creates_persistent_account_and_user_logs_in(api_client):
+    client, sessions = api_client
+
+    async def seed_cost_center():
+        async with sessions() as session:
+            center = CostCenterORM(name="Account Test", monthly_quota_hours=Decimal(8))
+            session.add(center)
+            await session.commit()
+            return str(center.id)
+
+    cost_center_id = asyncio.run(seed_cost_center())
+    admin_token = create_access_token({"sub": "admin", "role": "admin"})
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    payload = {
+        "name": "Account Test User",
+        "email": "account-test@example.test",
+        "password": "DeskflowStrong#2026",
+        "cost_center_id": cost_center_id,
+        "is_eligible_for_booking": True,
+    }
+
+    created = client.post("/api/v1/admin/accounts", json=payload, headers=admin_headers)
+
+    assert created.status_code == 201
+    account = created.json()
+    assert account["email"] == payload["email"]
+    assert account["is_eligible_for_booking"] is True
+    assert "password_hash" not in account
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": payload["email"], "password": payload["password"]},
+    )
+    assert login.status_code == 200
+    claims = verify_token(login.json()["access_token"])
+    assert claims["sub"] == account["id"]
+    assert claims["role"] == "employee"
+
+    duplicate = client.post("/api/v1/admin/accounts", json=payload, headers=admin_headers)
+    assert duplicate.status_code == 409
+
+
 def test_admin_quotas_rejects_non_admin_token(api_client):
     client, _sessions = api_client
     token = create_access_token({"sub": "employee-1", "role": "employee"}, expires_delta=None)
