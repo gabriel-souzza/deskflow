@@ -2,9 +2,6 @@
 
 Todas as mudanças notáveis neste projeto são documentadas aqui.
 
-O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
-e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
-
 ### Adicionado
 - Endpoints de espaços, disponibilidade, cancelamento, administração, relatórios e SSE com dados persistidos no PostgreSQL
 - Check-in QR assinado, controle de cota/capacidade transacional e testes de API com SQLite
