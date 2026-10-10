@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +9,6 @@ class SqlAlchemyUnitOfWork:
         self.session = session
 
     @asynccontextmanager
-    async def transaction(self) -> AsyncIterator[None]:
+    async def transaction(self) -> AsyncGenerator[None, None]:
         async with self.session.begin():
             yield

@@ -1,6 +1,6 @@
 import os
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import date
 
@@ -87,7 +87,7 @@ async def generate_daily_availability_job() -> None:
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
         release_expired_bookings_job,
