@@ -80,9 +80,6 @@ Este documento contém todos os **parâmetros, IDs reais semeados no banco de da
   - **Titular**: Maria Silva (`7e327db5-f9d9-44bd-887b-3f2f927a16f5`)
   - **Horário**: `2026-10-11 09:00:00` às `2026-10-11 11:00:00`
   - **Status**: `PENDING`
-- **Reserva 3 (Expirada pelo Scheduler)**:
-  - **ID**: `993536dc-010e-4555-b470-d10cb5325476`
-  - **Status**: `EXPIRED`
 
 ### Feriado Cadastrado:
 - **Data**: `2026-10-30`
