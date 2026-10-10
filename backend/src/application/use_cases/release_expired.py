@@ -29,7 +29,7 @@ class ReleaseExpiredBookingsUseCase:
 
         released = []
 
-        async def _process():
+        async def _process() -> None:
             for booking in expired_bookings:
                 expired_booking = booking.expire()
                 await self.booking_repo.save(expired_booking)

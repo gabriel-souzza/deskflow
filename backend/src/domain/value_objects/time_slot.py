@@ -14,7 +14,7 @@ class TimeSlot:
     start: datetime
     end: datetime
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # Invariant I1: start and end must be aligned to 15-minute grid
         if self.start.minute not in {0, 15, 30, 45}:
             raise ValueError(f"Start time must be on 15-minute boundary: {self.start}")

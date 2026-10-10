@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from typing import Any
 
 from domain.entities.booking import BookingStatus
 from domain.repositories.booking_repository import BookingRepository
@@ -17,7 +18,7 @@ class GenerateReportUseCase:
         self.booking_repo = booking_repo
         self.workspace_repo = workspace_repo
 
-    async def execute(self, start_day: date, end_day: date) -> dict:
+    async def execute(self, start_day: date, end_day: date) -> dict[str, Any]:
         if end_day < start_day:
             raise ValueError("Report end date must not precede start date")
 

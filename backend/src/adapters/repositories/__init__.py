@@ -7,3 +7,13 @@ from adapters.repositories.employee_repo_postgres import EmployeeRepositoryPostg
 from adapters.repositories.holiday_repo_postgres import HolidayRepositoryPostgres
 from adapters.repositories.quota_repo_postgres import QuotaRepositoryPostgres
 from adapters.repositories.workspace_repo_postgres import WorkspaceRepositoryPostgres
+
+__all__ = [
+    "AuditLogRepositoryPostgres",
+    "AvailabilityWindowRepositoryPostgres",
+    "BookingRepositoryPostgres",
+    "EmployeeRepositoryPostgres",
+    "HolidayRepositoryPostgres",
+    "QuotaRepositoryPostgres",
+    "WorkspaceRepositoryPostgres",
+]

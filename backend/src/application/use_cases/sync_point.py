@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
+from domain.entities.employee import Employee
 from domain.repositories.audit_log_repository import AuditLogRepository
 from domain.repositories.employee_repository import EmployeeRepository
 from domain.repositories.unit_of_work import UnitOfWork
@@ -21,7 +22,7 @@ class SyncPointUseCase:
         self.audit_log_repo = audit_log_repo
         self.unit_of_work = unit_of_work
 
-    async def execute(self, point_data: dict[str, Any]):
+    async def execute(self, point_data: dict[str, Any]) -> Employee:
         try:
             employee_id = UUID(str(point_data["employee_id"]))
             days_present = {date.fromisoformat(str(day)) for day in point_data["days_present"]}

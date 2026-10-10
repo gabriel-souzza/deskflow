@@ -1,12 +1,12 @@
 import hashlib
 import hmac
 import os
-from pathlib import Path
 import secrets
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
-from dotenv import load_dotenv
 import jwt
+from dotenv import load_dotenv
 
 env_path = Path(__file__).resolve().parents[2] / ".env"
 if env_path.exists():

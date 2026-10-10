@@ -9,7 +9,7 @@ from domain.value_objects.time_slot import TimeSlot
 
 
 class EventPublisher(Protocol):
-    async def publish(self, event: dict) -> None: ...
+    async def publish(self, event: dict[str, object]) -> None: ...
 
 
 class NotifyWaitlistUseCase:

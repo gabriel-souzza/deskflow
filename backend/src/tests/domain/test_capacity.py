@@ -1,5 +1,6 @@
 from domain.value_objects.capacity import Capacity
 
+
 def test_capacity_valid():
     c = Capacity(seats=5)
     assert c.seats == 5

@@ -43,8 +43,13 @@ dev = [
 target-version = "py312"
 line-length = 100
 
+[tool.ruff.lint]
+ignore = ["B008", "DTZ011", "DTZ001", "TRY003", "EM101", "EM102"]
+
 [tool.mypy]
 python_version = "3.12"
+mypy_path = "src"
+explicit_package_bases = true
 strict = true
 
 [tool.setuptools.packages.find]

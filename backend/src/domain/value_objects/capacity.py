@@ -10,7 +10,7 @@ class Capacity:
     seats: int
     zone: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.seats < 0:
             raise ValueError("Capacity seats cannot be negative")
         if self.seats == 0:

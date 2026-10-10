@@ -1,23 +1,24 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from uuid import UUID
 
 from domain.value_objects.capacity import Capacity
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class AvailabilityWindow:
     """
     Aggregate root representing an availability window for a workspace.
     Invariant I2: Capacity must never be exceeded (checked via UNIQUE constraint on booking_windows).
     Invariant I6: Optimistic lock via version_id.
     """
-    workspace_id: UUID = None
-    day: str = None  # ISO format: "2026-09-04"
-    slot_index: int = None
-    capacity: Capacity = None
+
+    workspace_id: UUID
+    day: str  # ISO format: "2026-09-04"
+    slot_index: int
+    capacity: Capacity
     version_id: int = 1
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.workspace_id is None:
             raise ValueError("workspace_id is required")
         if self.day is None:
@@ -38,5 +39,4 @@ class AvailabilityWindow:
 
     def increment_version(self) -> "AvailabilityWindow":
         """Create a new instance with incremented version (for optimistic locking)."""
-        from dataclasses import replace
         return replace(self, version_id=self.version_id + 1)

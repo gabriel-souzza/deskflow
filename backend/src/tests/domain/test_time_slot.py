@@ -1,4 +1,5 @@
 from datetime import datetime
+
 from domain.value_objects.time_slot import TimeSlot
 
 

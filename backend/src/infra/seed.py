@@ -1,10 +1,10 @@
 import asyncio
 import json
 import uuid
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from infra.database import SessionLocal
 from infra.models import (
@@ -15,7 +15,6 @@ from infra.models import (
     EmployeeORM,
     HolidayORM,
     QuotaPeriodORM,
-    WaitlistORM,
     WorkspaceORM,
 )
 from infra.security import hash_password

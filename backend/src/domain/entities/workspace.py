@@ -8,20 +8,21 @@ class WorkspaceType(str, Enum):
     MEETING_ROOM = "sala"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Workspace:
     """
     Aggregate root representing a workspace (station or meeting room).
     Inherits single table strategy: Station and MeetingRoom share workspaces table.
     """
+
     id: UUID = field(default_factory=uuid4)
-    code: str = None
-    floor: str = None
-    zone: str = None
+    code: str
+    floor: str
+    zone: str
     type: WorkspaceType = WorkspaceType.STATION
     capacity: int = 1  # Station capacity = 1; MeetingRoom > 1
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.code is None:
             raise ValueError("code is required")
         if self.floor is None:

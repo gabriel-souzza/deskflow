@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -350,4 +350,4 @@ def test_jwt_round_trip():
     payload = verify_token(token)
     assert payload["sub"] == "employee-1"
     assert payload["role"] == "admin"
-    assert payload["exp"] > datetime.now().timestamp()
+    assert payload["exp"] > datetime.now(UTC).timestamp()

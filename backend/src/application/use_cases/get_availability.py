@@ -1,4 +1,5 @@
 from datetime import date, datetime, time, timedelta
+from typing import Any
 from uuid import UUID
 
 from domain.entities.workspace import Workspace, WorkspaceType
@@ -27,7 +28,7 @@ class GetAvailabilityUseCase:
         floor: str | None = None,
         zone: str | None = None,
         workspace_type: WorkspaceType | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         if self.holiday_repo and await self.holiday_repo.is_blocked(day):
             return {
                 "day": day.isoformat(),

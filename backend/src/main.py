@@ -195,7 +195,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     try:
         await db.execute(text("SELECT 1"))
         db_status = "ok"
-    except Exception:
+    except Exception:  # noqa: BLE001
         db_status = "degraded"
     return {"status": "ok", "database": db_status}
 
