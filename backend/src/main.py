@@ -1,11 +1,12 @@
+import os
 import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import date
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,21 +14,51 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from adapters.controllers.admin_controller import router as admin_router
 from adapters.controllers.booking_controller import router as booking_router
 from adapters.controllers.checkin_controller import router as checkin_router
+from adapters.controllers.integration_controller import router as integration_router
 from adapters.controllers.report_controller import router as report_router
+from adapters.controllers.waitlist_controller import router as waitlist_router
 from adapters.controllers.workspace_controller import router as workspace_router
 from adapters.events.sse_publisher import sse_publisher
+from adapters.repositories.availability_window_repo_postgres import (
+    AvailabilityWindowRepositoryPostgres,
+)
 from adapters.repositories.booking_repo_postgres import BookingRepositoryPostgres
+from adapters.repositories.holiday_repo_postgres import HolidayRepositoryPostgres
+from adapters.repositories.waitlist_repo_postgres import WaitlistRepositoryPostgres
+from adapters.repositories.workspace_repo_postgres import WorkspaceRepositoryPostgres
+from application.use_cases.generate_daily_availability import GenerateDailyAvailabilityUseCase
+from application.use_cases.notify_waitlist import NotifyWaitlistUseCase
 from application.use_cases.release_expired import ReleaseExpiredBookingsUseCase
 from infra.database import SessionLocal, get_db
 from infra.models import EmployeeORM
-from infra.security import create_access_token, verify_password, verify_token
-
-security = HTTPBearer(auto_error=False)
+from infra.security import create_access_token, verify_password
+from infra.unit_of_work import SqlAlchemyUnitOfWork
 
 
 async def release_expired_bookings_job() -> None:
+    released = []
     async with SessionLocal() as session:
-        await ReleaseExpiredBookingsUseCase(BookingRepositoryPostgres(session)).execute()
+        async with session.begin():
+            released = await ReleaseExpiredBookingsUseCase(
+                BookingRepositoryPostgres(session)
+            ).execute()
+        for booking in released:
+            await NotifyWaitlistUseCase(
+                WaitlistRepositoryPostgres(session),
+                sse_publisher,
+                SqlAlchemyUnitOfWork(session),
+            ).execute(booking.workspace_id, booking.slot)
+
+
+async def generate_daily_availability_job() -> None:
+    async with SessionLocal() as session:
+        use_case = GenerateDailyAvailabilityUseCase(
+            AvailabilityWindowRepositoryPostgres(session),
+            WorkspaceRepositoryPostgres(session),
+            HolidayRepositoryPostgres(session),
+            SqlAlchemyUnitOfWork(session),
+        )
+        await use_case.execute(date.today().isoformat())
 
 
 @asynccontextmanager
@@ -41,6 +72,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         max_instances=1,
         coalesce=True,
     )
+    scheduler.add_job(
+        generate_daily_availability_job,
+        "cron",
+        hour=0,
+        minute=5,
+        id="generate-daily-availability",
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.start()
     try:
         yield
@@ -51,17 +91,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 class LoginRequest(BaseModel):
     username: str
     password: str
-
-
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),
-):
-    if credentials is None:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    try:
-        return verify_token(credentials.credentials)
-    except Exception as exc:  # pragma: no cover - defensive branch
-        raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
 
 
 app = FastAPI(
@@ -90,6 +119,8 @@ app.include_router(checkin_router)
 app.include_router(admin_router)
 app.include_router(report_router)
 app.include_router(workspace_router)
+app.include_router(waitlist_router)
+app.include_router(integration_router)
 
 
 @app.get("/api/v1/availability/stream", tags=["availability"])
@@ -106,10 +137,19 @@ async def availability_stream():
 
 @app.post("/api/v1/auth/login")
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
-    demo_passwords = {"admin": "admin123", "employee": "deskflow123"}
-    demo_password = demo_passwords.get(payload.username)
-    if demo_password is not None and secrets.compare_digest(payload.password, demo_password):
-        token = create_access_token({"sub": payload.username, "role": payload.username})
+    demo_admin_username = os.getenv("DEMO_ADMIN_USERNAME", "")
+    demo_admin_password = os.getenv("DEMO_ADMIN_PASSWORD", "")
+    if (
+        demo_admin_username
+        and demo_admin_password
+        and secrets.compare_digest(
+            payload.username.encode("utf-8"), demo_admin_username.encode("utf-8")
+        )
+        and secrets.compare_digest(
+            payload.password.encode("utf-8"), demo_admin_password.encode("utf-8")
+        )
+    ):
+        token = create_access_token({"sub": demo_admin_username, "role": "admin"})
         return {"access_token": token, "token_type": "bearer"}
 
     email = payload.username.strip().casefold()

@@ -1,32 +1,24 @@
 import csv
 import io
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.pdfgen import canvas
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from adapters.controllers.admin_controller import require_admin
+from adapters.controllers.auth import require_admin
+from adapters.repositories.booking_repo_postgres import BookingRepositoryPostgres
+from adapters.repositories.workspace_repo_postgres import WorkspaceRepositoryPostgres
+from application.use_cases.generate_report import GenerateReportUseCase
 from infra.database import get_db
-from infra.models import BookingORM, WorkspaceORM
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
 
 
-async def _report_rows(db: AsyncSession, start: datetime, end: datetime):
-    result = await db.execute(
-        select(BookingORM, WorkspaceORM)
-        .join(WorkspaceORM, WorkspaceORM.id == BookingORM.workspace_id)
-        .where(
-            BookingORM.slot_start < end,
-            BookingORM.slot_end > start,
-        )
-        .order_by(BookingORM.slot_start)
-    )
-    return result.all()
+def _generate_report(db: AsyncSession) -> GenerateReportUseCase:
+    return GenerateReportUseCase(BookingRepositoryPostgres(db), WorkspaceRepositoryPostgres(db))
 
 
 @router.get("/utilization")
@@ -36,26 +28,11 @@ async def utilization(
     db: AsyncSession = Depends(get_db),
 ):
     """GET /api/v1/reports/utilization — Dashboard (UC13)."""
-    start = datetime.combine(day, time(8))
-    end = datetime.combine(day, time(18))
-    rows = await _report_rows(db, start, end)
-    workspace_result = await db.execute(select(WorkspaceORM))
-    total_capacity = sum(item.capacity for item in workspace_result.scalars().all()) * 40
-    occupied_slot_seats = 0
-    confirmed_count = 0
-    for booking, _workspace in rows:
-        if booking.status != "CONFIRMED":
-            continue
-        confirmed_count += 1
-        clipped_start = max(booking.slot_start, start)
-        clipped_end = min(booking.slot_end, end)
-        occupied_slot_seats += int((clipped_end - clipped_start).total_seconds() // 900)
-    return {
-        "period": day.isoformat(),
-        "occupancy_rate": round(occupied_slot_seats / total_capacity, 4) if total_capacity else 0,
-        "bookings_confirmed": confirmed_count,
-        "available_spots": max(0, total_capacity - occupied_slot_seats),
-    }
+    try:
+        report = await _generate_report(db).execute(day, day)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return report["summary"]
 
 
 @router.get("/export")
@@ -69,25 +46,23 @@ async def export_report(
     """GET /api/v1/reports/export — CSV/PDF (UC14)."""
     if end_date < start_date:
         raise HTTPException(status_code=422, detail="end_date must not precede start_date")
-    start = datetime.combine(start_date, time.min)
-    end = datetime.combine(end_date + timedelta(days=1), time.min)
-    rows = await _report_rows(db, start, end)
+    report = await _generate_report(db).execute(start_date, end_date)
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(
         ["booking_id", "workspace_code", "floor", "zone", "employee_id", "start", "end", "status"]
     )
-    for booking, workspace in rows:
+    for booking in report["bookings"]:
         writer.writerow(
             [
-                str(booking.id),
-                workspace.code,
-                workspace.floor,
-                workspace.zone,
-                str(booking.employee_id),
-                booking.slot_start.isoformat(),
-                booking.slot_end.isoformat(),
-                booking.status,
+                booking["booking_id"],
+                booking["workspace_code"],
+                booking["floor"],
+                booking["zone"],
+                booking["employee_id"],
+                booking["slot_start"],
+                booking["slot_end"],
+                booking["status"],
             ]
         )
     csv_content = output.getvalue()

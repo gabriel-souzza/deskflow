@@ -7,13 +7,15 @@ services:
       - "8000:8000"
     command: [ "sh", "-c", "alembic -c src/infra/migrations/alembic.ini upgrade head && python -m uvicorn main:app --host 0.0.0.0 --port 8000" ]
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/deskflow
-      - SECRET_KEY=${SECRET_KEY:-deskflow-dev-secret}
-      - JWT_SECRET=${JWT_SECRET:-deskflow-dev-secret-key-2026-longer-than-32}
-      - SSE_HEARTBEAT_INTERVAL=30
-      - CHECKIN_TOLERANCE_MINUTES=10
-      - CANCELLATION_MINIMUM_HOURS=2
-      - SLOT_DURATION_MINUTES=15
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in backend/.env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in backend/.env}
+      DEMO_ADMIN_USERNAME: ${DEMO_ADMIN_USERNAME:-}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-}
+      ATTENDANCE_INTEGRATION_TOKEN: ${ATTENDANCE_INTEGRATION_TOKEN:-}
+      SSE_HEARTBEAT_INTERVAL: 30
+      CHECKIN_TOLERANCE_MINUTES: 10
+      CANCELLATION_MINIMUM_HOURS: 2
+      SLOT_DURATION_MINUTES: 15
     depends_on:
       db:
         condition: service_healthy
@@ -26,7 +28,7 @@ services:
     environment:
       POSTGRES_DB: deskflow
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in backend/.env}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -43,7 +45,7 @@ services:
       - "5050:80"
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@deskflow.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-deskflow-dev-pgadmin}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?Set PGADMIN_DEFAULT_PASSWORD in backend/.env}
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     depends_on:

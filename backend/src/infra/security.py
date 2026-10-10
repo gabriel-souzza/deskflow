@@ -2,19 +2,22 @@ import hashlib
 import hmac
 import os
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 
-SECRET_KEY = os.getenv("JWT_SECRET", "deskflow-dev-secret-key-2026-longer-than-32")
+SECRET_KEY = os.getenv("JWT_SECRET")
+if SECRET_KEY is None or len(SECRET_KEY.encode("utf-8")) < 32:
+    raise RuntimeError("JWT_SECRET must be configured with at least 32 bytes")
 ALGORITHM = "HS256"
+ACCESS_TOKEN_LIFETIME = timedelta(minutes=30)
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
-    if expires_delta is not None:
-        expire = datetime.now(timezone.utc) + expires_delta
-        to_encode.update({"exp": expire})
+    lifetime = expires_delta if expires_delta is not None else ACCESS_TOKEN_LIFETIME
+    expire = datetime.now(UTC) + lifetime
+    to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 

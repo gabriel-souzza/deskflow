@@ -108,7 +108,7 @@ src/
 | GET | `/openapi.json` | Schema OpenAPI JSON |
 | GET | `/health` | Health check (status 200) |
 
-Rotas administrativas e relatórios exigem `Authorization: Bearer <token>` com papel `admin`. Para criar uma conta no Swagger, autentique-se primeiro com `admin` / `admin123`, autorize com o JWT e chame `POST /api/v1/admin/accounts` com um centro de custo existente. A senha precisa ter pelo menos 12 caracteres; o cadastro não concede elegibilidade por padrão. O login demo `admin` / `admin123` é apenas para desenvolvimento. O stream SSE é mantido em memória por processo; com múltiplas instâncias, use um barramento compartilhado para distribuir eventos. `/health` verifica apenas se o processo responde, não a conexão com o banco.
+Rotas administrativas e relatórios exigem `Authorization: Bearer <token>` com papel `admin`. Criar e cancelar reservas exige autenticação; colaboradores só podem reservar e cancelar em nome próprio, enquanto admins podem operar em qualquer reserva. Para desenvolvimento local, configure `DEMO_ADMIN_USERNAME` e `DEMO_ADMIN_PASSWORD` no `.env`; não há credenciais demo embutidas. Com esse login, crie contas pelo endpoint `POST /api/v1/admin/accounts`; senhas de conta devem ter pelo menos 12 caracteres e a elegibilidade não é concedida por padrão. O stream SSE é mantido em memória por processo; com múltiplas instâncias, use um barramento compartilhado para distribuir eventos. `/health` verifica apenas se o processo responde, não a conexão com o banco.
 
 ## Testes
 
@@ -157,27 +157,34 @@ A API é documentada automaticamente pelo **FastAPI** via **OpenAPI**:
 
 ## Cobertura de Testes
 
-Meta: **80% de cobertura** mantida para assegurar a confiabilidade das alterações.
+Meta: **80% de cobertura** sobre controllers, eventos, repositórios, casos de uso ativos de reserva/cancelamento/expiração, entidades, value objects, infraestrutura e bootstrap. O gate está configurado em `backend/src/pytest.ini` e roda em todo `pytest`.
+
+Casos de uso ainda em estado de stub ou não conectados às rotas são explicitamente omitidos da métrica em `backend/.coveragerc`; continuam pendentes e não devem ser descritos como cobertos.
 
 - **Domain**: `src/tests/domain/` — invariantes I1-I6, Value Objects
 - **Application**: `src/tests/application/` — use cases, orquestração de agregados
 - **Adapter**: `src/tests/adapters/` — FastAPI TestClient
-- **Integration**: `src/tests/integration/` — PostgreSQL real
+- **Integration**: `src/tests/integration/` — SQLite por padrão; PostgreSQL real com migrations quando `TEST_DATABASE_URL` aponta para um banco descartável
 
 ```bash
 # Executar com cobertura
 cd backend
-uv run pytest src/tests -v --cov=src --cov-report=term-missing --cov-fail-under=80
+uv run pytest src/tests -v
 ```
 
 
 ## Configuração
 
-Variáveis de ambiente (`.env`):
+Crie `backend/.env` a partir de `.env.example` e substitua todos os valores `replace-me`. `JWT_SECRET` deve ter pelo menos 32 bytes aleatórios. Para Compose, `DATABASE_URL` deve apontar para o host `db`; para executar a API fora do Docker, use `localhost`. O mesmo valor de senha deve aparecer em `POSTGRES_PASSWORD` e na URL do banco.
 
 ```env
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/deskflow
-JWT_SECRET=your-secret-key
+DATABASE_URL=postgresql+asyncpg://postgres:replace-me@db:5432/deskflow
+POSTGRES_PASSWORD=replace-me
+JWT_SECRET=replace-with-a-random-secret-of-at-least-32-bytes
+DEMO_ADMIN_USERNAME=
+DEMO_ADMIN_PASSWORD=
+PGADMIN_DEFAULT_PASSWORD=replace-me
+TEST_DATABASE_URL=
 SSE_HEARTBEAT_INTERVAL=30
 CHECKIN_TOLERANCE_MINUTES=10
 CANCELLATION_MINIMUM_HOURS=2
@@ -188,8 +195,8 @@ SLOT_DURATION_MINUTES=15
 
 ```bash
 # Backend - instala dependências com uv (3-5x mais rápido que pip)
-uv sync --all-extras --no-dev
-uv run alembic upgrade head
+uv sync --extra dev
+uv run --env-file .env alembic -c src/infra/migrations/alembic.ini upgrade head
 
 # Frontend
 cd apps/web
@@ -199,6 +206,8 @@ npm install
 uv run pytest src/tests/domain -v
 uv run pytest src/tests/application -v
 ```
+
+Para rodar a API localmente, configure `DATABASE_URL` com host `localhost` e execute `uv run --env-file .env --directory src uvicorn main:app --host 127.0.0.1 --port 8000`.
 
 ## Execução com Docker Compose
 
@@ -210,19 +219,22 @@ docker compose up -d --build
 docker compose logs -f api
 ```
 
-O pgAdmin fica em `http://localhost:5050` (email `admin@deskflow.com`, senha `deskflow-dev-pgadmin` por padrão de desenvolvimento). Para registrar o servidor, use host `db`, porta `5432`, database `deskflow`, usuário `postgres` e senha `postgres`. Esses valores padrão são apenas para desenvolvimento; defina `PGADMIN_DEFAULT_EMAIL` e `PGADMIN_DEFAULT_PASSWORD` no `.env` para substituí-los.
+O pgAdmin fica em `http://localhost:5050`. Use o email e a senha configurados em `PGADMIN_DEFAULT_EMAIL` e `PGADMIN_DEFAULT_PASSWORD`; para registrar o servidor, use host `db`, porta `5432`, database `deskflow`, usuário `postgres` e a senha configurada em `POSTGRES_PASSWORD`. O Compose falha se as configurações obrigatórias estiverem ausentes.
+
+Para rodar o teste PostgreSQL real, use um banco descartável acessível pelo host, configure `TEST_DATABASE_URL` em `.env` (host `localhost`) e execute `uv run --env-file .env pytest src/tests/integration/test_postgres_booking.py -v`. O teste aplica as migrations Alembic até `head` antes de exercitar reserva, cancelamento e reembolso.
 
 ## Status do Backend (Atualizado)
 
-O backend está construído seguindo a arquitetura **Clean Architecture + DDD + TDD** definida no `documento-software.md`:
+O backend possui domínio separado e uma API operacional, mas ainda não está integralmente alinhado à arquitetura descrita em `documento-software.md`:
 
 - **Domínio (`src/domain/`)**: 8 entidades + 2 VO + 6 repos ABC
-- **Application**: 10 use cases completos
-- **Adapters**: 4 controllers + 3 repos + 4 events
+- **Application**: criação/cancelamento de reserva e expiração são orquestrados por use cases com Unit of Work; outros use cases ainda são stubs
+- **Adapters**: 5 controllers e 6 repositórios PostgreSQL; reservas/cancelamentos usam interfaces e repositories, enquanto outras rotas ainda acessam SQLAlchemy diretamente
 - **Infra**: `database.py`, `security.py`, `qr_generator.py`, `migrations/`
 - **DevOps**: `uv`, Docker, docker-compose
+- **Testes**: gate de 80% nos módulos implementados; use cases stub são explicitamente omitidos, e o teste PostgreSQL real requer `TEST_DATABASE_URL`
 
-**Correções aplicadas**: `Decimal`, `utcnow()` deprecated, `seats_available` duplicado, `employee.py` conflito, `time_slot.py` tipo.
+Os use cases que permanecem incompletos e o teste PostgreSQL não executado neste ambiente ainda impedem afirmar Clean Architecture/TDD completos para todo o escopo.
 
 ## Licença
 

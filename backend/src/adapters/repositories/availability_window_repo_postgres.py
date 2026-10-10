@@ -1,12 +1,13 @@
-from typing import Optional
 from uuid import UUID
-from sqlalchemy import select
+
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from domain.repositories.availability_window_repository import AvailabilityWindowRepository
 from domain.entities.availability_window import AvailabilityWindow
+from domain.entities.booking import BookingStatus
+from domain.repositories.availability_window_repository import AvailabilityWindowRepository
 from domain.value_objects.capacity import Capacity
-from infra.models import AvailabilityWindowORM
+from infra.models import AvailabilityWindowORM, BookingORM, BookingWindowORM
 
 
 class AvailabilityWindowRepositoryPostgres(AvailabilityWindowRepository):
@@ -15,7 +16,7 @@ class AvailabilityWindowRepositoryPostgres(AvailabilityWindowRepository):
 
     async def get_by_key(
         self, workspace_id: UUID, day: str, slot_index: int
-    ) -> Optional[AvailabilityWindow]:
+    ) -> AvailabilityWindow | None:
         result = await self.session.execute(
             select(AvailabilityWindowORM).where(
                 AvailabilityWindowORM.workspace_id == workspace_id,
@@ -35,26 +36,39 @@ class AvailabilityWindowRepositoryPostgres(AvailabilityWindowRepository):
         )
 
     async def save(self, window: AvailabilityWindow) -> AvailabilityWindow:
-        orm = AvailabilityWindowORM(
-            workspace_id=window.workspace_id,
-            day=window.day,
-            slot_index=window.slot_index,
-            seats=window.capacity.seats,
-            version_id=window.version_id,
+        orm = await self.session.get(
+            AvailabilityWindowORM,
+            (window.workspace_id, window.day, window.slot_index),
         )
-        self.session.add(orm)
-        await self.session.commit()
+        if orm is None:
+            orm = AvailabilityWindowORM(
+                workspace_id=window.workspace_id,
+                day=window.day,
+                slot_index=window.slot_index,
+                seats=window.capacity.seats,
+                version_id=window.version_id,
+            )
+            self.session.add(orm)
+        else:
+            orm.seats = window.capacity.seats
+            orm.version_id = window.version_id
+        await self.session.flush()
         return window
 
-    async def count_by_window(
-        self, workspace_id: UUID, day: str, slot_index: int
-    ) -> int:
-        from sqlalchemy import func
+    async def delete_by_day(self, day: str) -> None:
+        await self.session.execute(
+            delete(AvailabilityWindowORM).where(AvailabilityWindowORM.day == day)
+        )
+
+    async def count_by_window(self, workspace_id: UUID, day: str, slot_index: int) -> int:
         result = await self.session.execute(
-            select(func.count(AvailabilityWindowORM.seats)).where(
-                AvailabilityWindowORM.workspace_id == workspace_id,
-                AvailabilityWindowORM.day == day,
-                AvailabilityWindowORM.slot_index == slot_index,
+            select(func.count(BookingWindowORM.booking_id))
+            .join(BookingORM, BookingORM.id == BookingWindowORM.booking_id)
+            .where(
+                BookingWindowORM.workspace_id == workspace_id,
+                BookingWindowORM.day == day,
+                BookingWindowORM.slot_index == slot_index,
+                BookingORM.status.in_((BookingStatus.PENDING.value, BookingStatus.CONFIRMED.value)),
             )
         )
         return result.scalar() or 0

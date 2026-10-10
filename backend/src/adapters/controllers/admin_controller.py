@@ -4,39 +4,51 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from adapters.controllers.auth import require_admin
+from adapters.repositories.availability_window_repo_postgres import (
+    AvailabilityWindowRepositoryPostgres,
+)
+from adapters.repositories.holiday_repo_postgres import HolidayRepositoryPostgres
+from adapters.repositories.quota_repo_postgres import QuotaRepositoryPostgres
+from application.use_cases.block_holidays import BlockHolidaysUseCase
+from application.use_cases.set_quota import SetQuotaUseCase
+from domain.entities.holiday import Holiday
+from domain.entities.quota_period import QuotaExceededError
 from infra.database import get_db
 from infra.models import CostCenterORM, EmployeeORM, QuotaPeriodORM
-from infra.security import hash_password, verify_token
+from infra.security import hash_password
+from infra.unit_of_work import SqlAlchemyUnitOfWork
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
-security = HTTPBearer(auto_error=False)
-
-
-async def require_auth(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),
-):
-    if credentials is None:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    try:
-        return verify_token(credentials.credentials)
-    except Exception as exc:  # pragma: no cover - defensive branch
-        raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
-
-
-async def require_admin(user=Depends(require_auth)):
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Administrator role required")
-    return user
 
 
 class QuotaUpdate(BaseModel):
     monthly_quota_hours: Decimal = Field(ge=0)
+
+
+class HolidayCreate(BaseModel):
+    day: date
+    description: str = Field(default="", max_length=200)
+
+
+@router.post("/holidays", status_code=201)
+async def block_holiday(
+    payload: HolidayCreate,
+    _user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    holiday = Holiday(day=payload.day, description=payload.description.strip())
+    saved = await BlockHolidaysUseCase(
+        AvailabilityWindowRepositoryPostgres(db),
+        HolidayRepositoryPostgres(db),
+        SqlAlchemyUnitOfWork(db),
+    ).execute(holiday)
+    return {"day": saved.day.isoformat(), "description": saved.description, "blocked": True}
 
 
 class AccountCreate(BaseModel):
@@ -132,39 +144,20 @@ async def set_quota(
     db: AsyncSession = Depends(get_db),
 ):
     """PUT /api/v1/admin/quotas/{id} — Configurar quota (UC11)."""
-    cost_center = await db.get(CostCenterORM, id)
-    if cost_center is None:
-        raise HTTPException(status_code=404, detail="Cost center not found")
     today = date.today()
-    period_start = datetime.combine(today.replace(day=1), time.min)
+    period_start_day = today.replace(day=1)
     next_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1)
-    period_end = datetime.combine(next_month - timedelta(days=1), time.min)
-    quota = await db.scalar(
-        select(QuotaPeriodORM).where(
-            QuotaPeriodORM.cost_center_id == id,
-            QuotaPeriodORM.period_start == period_start,
-        )
-    )
-    if quota is not None and payload.monthly_quota_hours < quota.consumed_hours:
-        raise HTTPException(
-            status_code=409, detail="Quota cannot be set below hours already consumed"
-        )
-    if quota is None:
-        quota = QuotaPeriodORM(
-            cost_center_id=id,
-            period_start=period_start,
-            period_end=period_end,
-            total_hours=payload.monthly_quota_hours,
-            consumed_hours=Decimal(0),
-        )
-        db.add(quota)
-    else:
-        quota.total_hours = payload.monthly_quota_hours
-        quota.period_end = period_end
-    cost_center.monthly_quota_hours = payload.monthly_quota_hours
-    await db.commit()
+    period_end_day = next_month - timedelta(days=1)
+    try:
+        quota = await SetQuotaUseCase(
+            QuotaRepositoryPostgres(db), SqlAlchemyUnitOfWork(db)
+        ).execute(id, payload.monthly_quota_hours, period_start_day, period_end_day)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Cost center not found") from exc
+    except QuotaExceededError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {
-        "id": f"{id}:{period_start.date().isoformat()}",
+        "id": f"{id}:{period_start_day.isoformat()}",
         "cost_center_id": str(id),
         "monthly_quota_hours": float(quota.total_hours),
         "used_hours": float(quota.consumed_hours),

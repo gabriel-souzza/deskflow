@@ -27,6 +27,11 @@ class WaitlistRepository(ABC):
         ...
 
     @abstractmethod
+    async def save(self, entry: Waitlist) -> Waitlist:
+        """Persist a changed waitlist entry."""
+        ...
+
+    @abstractmethod
     async def delete(self, waitlist_id: UUID) -> None:
         """Delete a waitlist entry."""
         ...

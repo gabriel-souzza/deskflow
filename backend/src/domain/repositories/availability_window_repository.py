@@ -22,6 +22,11 @@ class AvailabilityWindowRepository(ABC):
         ...
 
     @abstractmethod
+    async def delete_by_day(self, day: str) -> None:
+        """Delete generated availability windows for a blocked day."""
+        ...
+
+    @abstractmethod
     async def count_by_window(
         self,
         workspace_id: UUID,

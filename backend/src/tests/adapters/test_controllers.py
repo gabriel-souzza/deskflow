@@ -3,40 +3,9 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
-
-from infra.database import get_db
-from infra.models import Base, CostCenterORM, EmployeeORM, QuotaPeriodORM, WorkspaceORM
+from infra.models import CostCenterORM, EmployeeORM, QuotaPeriodORM, WorkspaceORM
 from infra.security import create_access_token, verify_token
 from main import app
-
-
-@pytest.fixture
-def api_client(tmp_path):
-    engine = create_async_engine(
-        f"sqlite+aiosqlite:///{tmp_path / 'deskflow-test.sqlite'}",
-        poolclass=NullPool,
-    )
-    sessions = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def create_schema():
-        async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
-
-    asyncio.run(create_schema())
-
-    async def override_get_db():
-        async with sessions() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as client:
-        yield client, sessions
-    app.dependency_overrides.pop(get_db, None)
-    asyncio.run(engine.dispose())
 
 
 def test_documented_business_routes_are_registered():
@@ -46,6 +15,8 @@ def test_documented_business_routes_are_registered():
         ("/api/v1/workspaces/{id}/availability", "get"),
         ("/api/v1/bookings/{id}", "delete"),
         ("/api/v1/admin/workspaces", "post"),
+        ("/api/v1/admin/holidays", "post"),
+        ("/api/v1/waitlist", "post"),
         ("/api/v1/availability/stream", "get"),
     }
 
@@ -82,6 +53,10 @@ def test_booking_persistence_capacity_and_cancellation(api_client, monkeypatch):
             return str(center.id), str(employee.id), str(workspace.id)
 
     cost_center_id, employee_id, workspace_id = asyncio.run(seed())
+    employee_token = create_access_token(
+        {"sub": employee_id, "role": "employee", "employee_id": employee_id}
+    )
+    employee_headers = {"Authorization": f"Bearer {employee_token}"}
     slot_start = datetime.combine(date.today() + timedelta(days=3), time(9))
     booking_params = {
         "workspace_id": workspace_id,
@@ -90,13 +65,33 @@ def test_booking_persistence_capacity_and_cancellation(api_client, monkeypatch):
         "slot_start": slot_start.isoformat(),
         "slot_end": (slot_start + timedelta(minutes=30)).isoformat(),
     }
+    anonymous_response = client.post(
+        "/api/v1/bookings",
+        params=booking_params,
+    )
+    assert anonymous_response.status_code == 401
+    other_employee_params = {**booking_params, "employee_id": str(UUID(int=1))}
+    forbidden_response = client.post(
+        "/api/v1/bookings",
+        params=other_employee_params,
+        headers=employee_headers,
+    )
+    assert forbidden_response.status_code == 403
     response = client.post(
         "/api/v1/bookings",
         params=booking_params,
+        headers=employee_headers,
     )
     assert response.status_code == 201
     booking_id = response.json()["id"]
     assert response.json()["qr_token"]
+    stranger_token = create_access_token(
+        {"sub": "another-employee", "role": "employee", "employee_id": "another-employee"}
+    )
+    stranger_headers = {"Authorization": f"Bearer {stranger_token}"}
+    assert (
+        client.delete(f"/api/v1/bookings/{booking_id}", headers=stranger_headers).status_code == 403
+    )
     admin_token = create_access_token({"sub": "admin", "role": "admin"}, expires_delta=None)
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
@@ -184,9 +179,12 @@ def test_booking_persistence_capacity_and_cancellation(api_client, monkeypatch):
     )
     assert availability.status_code == 200
     assert availability.json()["slots"][4]["seats_available"] == 0
-    assert client.post("/api/v1/bookings", params=booking_params).status_code == 409
+    assert (
+        client.post("/api/v1/bookings", params=booking_params, headers=employee_headers).status_code
+        == 409
+    )
 
-    cancellation = client.delete(f"/api/v1/bookings/{booking_id}")
+    cancellation = client.delete(f"/api/v1/bookings/{booking_id}", headers=employee_headers)
     assert cancellation.status_code == 200
     assert cancellation.json()["status"] == "CANCELLED"
     availability = client.get(
@@ -214,9 +212,87 @@ def test_booking_persistence_capacity_and_cancellation(api_client, monkeypatch):
     asyncio.run(assert_quota_refunded())
 
 
+def test_waitlist_enrollment_is_idempotent_and_notified_after_cancellation(api_client):
+    client, sessions = api_client
+
+    async def seed():
+        async with sessions() as session:
+            center = CostCenterORM(name="Waitlist Test", monthly_quota_hours=Decimal(8))
+            session.add(center)
+            await session.flush()
+            employee = EmployeeORM(
+                name="Waitlist Employee",
+                email="waitlist@example.test",
+                cost_center_id=center.id,
+                is_eligible_for_booking=True,
+            )
+            workspace = WorkspaceORM(
+                code="WAITLIST-1",
+                floor="1",
+                zone="open",
+                type="estacao",
+                capacity=1,
+            )
+            session.add_all([employee, workspace])
+            await session.commit()
+            return str(center.id), str(employee.id), str(workspace.id)
+
+    cost_center_id, employee_id, workspace_id = asyncio.run(seed())
+    headers = {
+        "Authorization": "Bearer "
+        + create_access_token({"sub": employee_id, "role": "employee", "employee_id": employee_id})
+    }
+    start = datetime.combine(date.today() + timedelta(days=3), time(9))
+    end = start + timedelta(minutes=30)
+    booking = client.post(
+        "/api/v1/bookings",
+        params={
+            "workspace_id": workspace_id,
+            "employee_id": employee_id,
+            "cost_center_id": cost_center_id,
+            "slot_start": start.isoformat(),
+            "slot_end": end.isoformat(),
+        },
+        headers=headers,
+    )
+    assert booking.status_code == 201
+
+    waitlist_payload = {
+        "workspace_id": workspace_id,
+        "slot_start": start.isoformat(),
+        "slot_end": end.isoformat(),
+    }
+    joined = client.post("/api/v1/waitlist", json=waitlist_payload, headers=headers)
+    repeated = client.post("/api/v1/waitlist", json=waitlist_payload, headers=headers)
+    assert joined.status_code == 201
+    assert repeated.status_code == 201
+    assert repeated.json()["id"] == joined.json()["id"]
+
+    cancelled = client.delete(f"/api/v1/bookings/{booking.json()['id']}", headers=headers)
+    assert cancelled.status_code == 200
+
+    from infra.models import WaitlistORM
+
+    async def assert_notification_persisted():
+        async with sessions() as session:
+            entry = await session.get(WaitlistORM, UUID(joined.json()["id"]))
+            assert entry is not None and entry.notified_at is not None
+
+    asyncio.run(assert_notification_persisted())
+
+
 def test_admin_quotas_requires_authentication(api_client):
     client, _sessions = api_client
     response = client.get("/api/v1/admin/quotas")
+    assert response.status_code == 401
+
+
+def test_hardcoded_demo_credentials_are_disabled(api_client):
+    client, _sessions = api_client
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "admin123"},
+    )
     assert response.status_code == 401
 
 
@@ -274,3 +350,4 @@ def test_jwt_round_trip():
     payload = verify_token(token)
     assert payload["sub"] == "employee-1"
     assert payload["role"] == "admin"
+    assert payload["exp"] > datetime.now().timestamp()

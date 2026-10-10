@@ -1,3 +1,9 @@
+from adapters.repositories.audit_log_repo_postgres import AuditLogRepositoryPostgres
+from adapters.repositories.availability_window_repo_postgres import (
+    AvailabilityWindowRepositoryPostgres,
+)
 from adapters.repositories.booking_repo_postgres import BookingRepositoryPostgres
-from adapters.repositories.availability_window_repo_postgres import AvailabilityWindowRepositoryPostgres
+from adapters.repositories.employee_repo_postgres import EmployeeRepositoryPostgres
+from adapters.repositories.holiday_repo_postgres import HolidayRepositoryPostgres
 from adapters.repositories.quota_repo_postgres import QuotaRepositoryPostgres
+from adapters.repositories.workspace_repo_postgres import WorkspaceRepositoryPostgres

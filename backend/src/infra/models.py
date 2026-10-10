@@ -1,10 +1,13 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import UUID as SA_UUID
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
-from sqlalchemy.ext.asyncio import AsyncAttrs
-from sqlalchemy.orm import DeclarativeBase, relationship
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy.orm import DeclarativeBase
+
+
+def _utcnow_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class Base(DeclarativeBase):
@@ -40,8 +43,8 @@ class BookingORM(Base):
     slot_start = Column(DateTime, nullable=False)
     slot_end = Column(DateTime, nullable=False)
     status = Column(String, nullable=False, default="PENDING")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    modified_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow_naive)
+    modified_at = Column(DateTime, default=_utcnow_naive)
 
 
 class BookingWindowORM(Base):
@@ -85,7 +88,7 @@ class WaitlistORM(Base):
     employee_id = Column(SA_UUID(as_uuid=True), ForeignKey("employees.id"))
     desired_start = Column(DateTime)
     desired_end = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow_naive)
     notified_at = Column(DateTime, nullable=True)
 
 
@@ -96,11 +99,11 @@ class AuditLogORM(Base):
     action = Column(String, nullable=False)
     entity_type = Column(String, nullable=False)
     entity_id = Column(String, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=_utcnow_naive)
     reason = Column(String, default="")
 
 
 class HolidayORM(Base):
     __tablename__ = "holidays"
-    day = Column(DateTime, primary_key=True)
+    day = Column(Date, primary_key=True)
     description = Column(String, default="")

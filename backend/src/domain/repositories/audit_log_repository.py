@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
@@ -13,7 +14,7 @@ class AuditLogRepository(ABC):
         action: str,
         entity_type: str,
         entity_id: str,
-        timestamp: str,
+        timestamp: datetime,
         reason: str,
     ) -> AuditLog:
         """Create an audit log entry."""

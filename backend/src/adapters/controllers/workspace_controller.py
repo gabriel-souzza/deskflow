@@ -8,10 +8,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from adapters.controllers.admin_controller import require_admin
+from adapters.controllers.auth import require_admin
 from adapters.events.sse_publisher import sse_publisher
+from adapters.repositories.workspace_repo_postgres import WorkspaceRepositoryPostgres
+from application.use_cases.manage_workspace import ManageWorkspaceUseCase
+from domain.entities.workspace import Workspace, WorkspaceType
+from domain.repositories.workspace_repository import WorkspaceInUseError
 from infra.database import get_db
 from infra.models import BookingORM, WorkspaceORM
+from infra.unit_of_work import SqlAlchemyUnitOfWork
 
 router = APIRouter(tags=["workspaces"])
 
@@ -98,24 +103,45 @@ async def create_workspace(
     if existing is not None:
         raise HTTPException(status_code=409, detail="Workspace code already exists")
 
-    workspace = WorkspaceORM(
+    workspace = Workspace(
         code=payload.code,
         floor=payload.floor,
         zone=payload.zone,
-        type=payload.type,
+        type=WorkspaceType(payload.type),
         capacity=payload.capacity,
-        resources=json.dumps(payload.resources),
     )
-    db.add(workspace)
-    await db.commit()
-    await db.refresh(workspace)
-    await sse_publisher.publish({"type": "workspace.created", "workspace_id": str(workspace.id)})
+    try:
+        saved = await ManageWorkspaceUseCase(
+            WorkspaceRepositoryPostgres(db), SqlAlchemyUnitOfWork(db)
+        ).create(workspace)
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail="Workspace could not be created") from exc
+    orm = await db.get(WorkspaceORM, saved.id)
+    if orm is not None:
+        orm.resources = json.dumps(payload.resources)
+        await db.commit()
+    await sse_publisher.publish({"type": "workspace.created", "workspace_id": str(saved.id)})
     return {
-        "id": str(workspace.id),
-        "code": workspace.code,
-        "floor": workspace.floor,
-        "zone": workspace.zone,
-        "type": workspace.type,
-        "capacity": workspace.capacity,
+        "id": str(saved.id),
+        "code": saved.code,
+        "floor": saved.floor,
+        "zone": saved.zone,
+        "type": saved.type.value,
+        "capacity": saved.capacity,
         "resources": payload.resources,
     }
+
+
+@router.delete("/api/v1/admin/workspaces/{id}", status_code=204)
+async def delete_workspace(
+    id: UUID,
+    _user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    use_case = ManageWorkspaceUseCase(WorkspaceRepositoryPostgres(db), SqlAlchemyUnitOfWork(db))
+    try:
+        await use_case.delete(id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except WorkspaceInUseError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

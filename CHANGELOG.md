@@ -3,6 +3,8 @@
 Todas as mudanças notáveis neste projeto são documentadas aqui.
 
 ### Adicionado
+- Unit of Work transacional para criação/cancelamento de reservas, com repositories injetados nos casos de uso
+- Teste PostgreSQL opt-in com execução Alembic e validação de reserva/cancelamento via `TEST_DATABASE_URL`
 - Cadastro administrativo de contas de colaboradores com senha PBKDF2 e login persistido por email
 - Endpoints de espaços, disponibilidade, cancelamento, administração, relatórios e SSE com dados persistidos no PostgreSQL
 - Check-in QR assinado, controle de cota/capacidade transacional e testes de API com SQLite
@@ -16,6 +18,9 @@ Todas as mudanças notáveis neste projeto são documentadas aqui.
 - docs/plano-implementacao-backend.md (plano completo)
 
 ### Corrigido
+- Reservas agora exigem autenticação e só podem ser canceladas pelo titular ou por admin; JWT expira em 30 minutos por padrão
+- Removidos logins e segredos padrão; Compose e migrações exigem configuração explícita de credenciais
+- Gate de cobertura corrigido para medir os módulos do backend e exigir 80%
 - `Booking.py`: Decimal importado, datetime.utcnow() → timezone.utc, kw_only/default corrigido, replace importado no topo
 - `time_slot.py`: slots() tipo Iterator (não Tuple)
 - `employee.py`: conflito de nome `is_eligible_for_booking` resolvido

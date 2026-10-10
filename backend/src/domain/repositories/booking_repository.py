@@ -12,6 +12,11 @@ class BookingRepository(ABC):
         ...
 
     @abstractmethod
+    async def get_by_id_for_update(self, booking_id: UUID) -> Booking | None:
+        """Retrieve and lock a booking within the active transaction."""
+        ...
+
+    @abstractmethod
     async def save(self, booking: Booking) -> Booking:
         """Persist a booking and its BookingWindow associations atomically."""
         ...
@@ -43,4 +48,9 @@ class BookingRepository(ABC):
         implementation must return the number of confirmed BookingWindow rows
         for (workspace_id, day, slot_index).
         """
+        ...
+
+    @abstractmethod
+    async def list_between(self, start: datetime, end: datetime) -> list[Booking]:
+        """List bookings overlapping a half-open date range."""
         ...

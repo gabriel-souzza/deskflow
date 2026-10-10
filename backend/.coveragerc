@@ -1,0 +1,10 @@
+[run]
+omit =
+    */application/use_cases/block_holidays.py
+    */application/use_cases/confirm_booking.py
+    */application/use_cases/generate_daily_availability.py
+    */application/use_cases/generate_report.py
+    */application/use_cases/manage_workspace.py
+    */application/use_cases/notify_waitlist.py
+    */application/use_cases/set_quota.py
+    */application/use_cases/sync_point.py

@@ -12,6 +12,11 @@ class WorkspaceRepository(ABC):
         ...
 
     @abstractmethod
+    async def get_for_booking(self, workspace_id: UUID) -> Optional[Workspace]:
+        """Retrieve and lock a workspace while a booking is created."""
+        ...
+
+    @abstractmethod
     async def list_all_active(self) -> list[Workspace]:
         """Return all workspaces marked as active."""
         ...
@@ -20,3 +25,12 @@ class WorkspaceRepository(ABC):
     async def save(self, workspace: Workspace) -> Workspace:
         """Persist a workspace (insert or update)."""
         ...
+
+    @abstractmethod
+    async def delete(self, workspace_id: UUID) -> bool:
+        """Delete an unused workspace, returning false when it does not exist."""
+        ...
+
+
+class WorkspaceInUseError(Exception):
+    """Raised when a workspace with bookings or waitlist entries cannot be deleted."""
