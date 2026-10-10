@@ -1,11 +1,14 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import UUID
 
 from domain.entities.booking import Booking, BookingStatus
 from domain.entities.quota_period import QuotaExceededError
 from domain.entities.workspace import WorkspaceType
+from domain.events.event_bus import EventBus
+from domain.events.events import BookingCreated, QuotaConsumed
 from domain.repositories.audit_log_repository import AuditLogRepository
+from domain.repositories.availability_window_repository import AvailabilityWindowRepository
 from domain.repositories.booking_repository import BookingRepository
 from domain.repositories.employee_repository import EmployeeRepository
 from domain.repositories.quota_repository import QuotaRepository
@@ -44,6 +47,8 @@ class CreateBookingUseCase:
         quota_repo: QuotaRepository,
         audit_log_repo: AuditLogRepository,
         unit_of_work: UnitOfWork,
+        window_repo: AvailabilityWindowRepository | None = None,
+        event_bus: EventBus | None = None,
     ):
         self.booking_repo = booking_repo
         self.workspace_repo = workspace_repo
@@ -51,6 +56,8 @@ class CreateBookingUseCase:
         self.quota_repo = quota_repo
         self.audit_log_repo = audit_log_repo
         self.unit_of_work = unit_of_work
+        self.window_repo = window_repo
+        self.event_bus = event_bus
 
     async def execute(self, cmd: CreateBookingCommand) -> CreateBookingResult:
         day = cmd.slot.start.date()
@@ -84,8 +91,10 @@ class CreateBookingUseCase:
                 return CreateBookingResult(None, 403, "Employee is not eligible to book")
 
             day_key = day.isoformat()
+            slot_indices = []
             for slot_start in cmd.slot.slots():
                 slot_index = (slot_start.hour * 60 + slot_start.minute - 8 * 60) // 15
+                slot_indices.append(slot_index)
                 occupied = await self.booking_repo.count_by_window(
                     cmd.workspace_id, day_key, slot_index
                 )
@@ -99,6 +108,14 @@ class CreateBookingUseCase:
                 return CreateBookingResult(None, 404, str(exc))
             except QuotaExceededError as exc:
                 return CreateBookingResult(None, 402, str(exc))
+
+            # Invariant I6: update version_id on availability windows if window_repo provided
+            if self.window_repo is not None:
+                for slot_index in slot_indices:
+                    win = await self.window_repo.get_by_key(cmd.workspace_id, day_key, slot_index)
+                    if win is not None:
+                        updated_win = replace(win, version_id=win.version_id + 1)
+                        await self.window_repo.save(updated_win)
 
             booking = Booking(
                 workspace_id=cmd.workspace_id,
@@ -117,9 +134,30 @@ class CreateBookingUseCase:
                 timestamp=datetime.now(UTC).replace(tzinfo=None),
                 reason="booking created",
             )
-            return CreateBookingResult(
-                booking=booking,
-                status_code=201,
-                message="Booking created (PENDING)",
-                workspace_type=workspace.type,
+
+        if self.event_bus is not None:
+            await self.event_bus.publish(
+                QuotaConsumed(
+                    cost_center_id=cmd.cost_center_id,
+                    period_start=quota.period_start,
+                    total_hours=updated_quota.total_hours,
+                    consumed_hours=updated_quota.consumed_hours,
+                    delta_hours=cmd.slot.duration_hours,
+                )
             )
+            await self.event_bus.publish(
+                BookingCreated(
+                    booking_id=booking.id,
+                    workspace_id=cmd.workspace_id,
+                    employee_id=cmd.employee_id,
+                    cost_center_id=cmd.cost_center_id,
+                    slot=cmd.slot,
+                )
+            )
+
+        return CreateBookingResult(
+            booking=booking,
+            status_code=201,
+            message="Booking created (PENDING)",
+            workspace_type=workspace.type,
+        )

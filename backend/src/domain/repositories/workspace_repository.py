@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import Optional
 from uuid import UUID
 
 from domain.entities.workspace import Workspace
@@ -7,12 +6,12 @@ from domain.entities.workspace import Workspace
 
 class WorkspaceRepository(ABC):
     @abstractmethod
-    async def get_by_id(self, workspace_id: UUID) -> Optional[Workspace]:
+    async def get_by_id(self, workspace_id: UUID) -> Workspace | None:
         """Retrieve a workspace by its ID."""
         ...
 
     @abstractmethod
-    async def get_for_booking(self, workspace_id: UUID) -> Optional[Workspace]:
+    async def get_for_booking(self, workspace_id: UUID) -> Workspace | None:
         """Retrieve and lock a workspace while a booking is created."""
         ...
 

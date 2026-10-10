@@ -2,6 +2,8 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from domain.entities.booking import Booking, BookingStatus, InvalidStateTransitionError
+from domain.events.event_bus import EventBus
+from domain.events.events import BookingCancelled
 from domain.repositories.audit_log_repository import AuditLogRepository
 from domain.repositories.booking_repository import BookingRepository
 from domain.repositories.quota_repository import QuotaRepository
@@ -17,11 +19,13 @@ class CancelBookingUseCase:
         quota_repo: QuotaRepository,
         audit_log_repo: AuditLogRepository,
         unit_of_work: UnitOfWork,
+        event_bus: EventBus | None = None,
     ):
         self.booking_repo = booking_repo
         self.quota_repo = quota_repo
         self.audit_log_repo = audit_log_repo
         self.unit_of_work = unit_of_work
+        self.event_bus = event_bus
 
     async def execute(
         self,
@@ -65,7 +69,18 @@ class CancelBookingUseCase:
                 timestamp=now.replace(tzinfo=None),
                 reason="booking cancelled",
             )
-            return cancelled
+
+        if self.event_bus is not None:
+            await self.event_bus.publish(
+                BookingCancelled(
+                    booking_id=cancelled.id,
+                    workspace_id=cancelled.workspace_id,
+                    employee_id=cancelled.employee_id,
+                    slot=cancelled.slot,
+                )
+            )
+
+        return cancelled
 
 
 class BookingNotFoundError(Exception):

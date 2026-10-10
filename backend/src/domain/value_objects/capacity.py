@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True, slots=True)
@@ -9,7 +8,7 @@ class Capacity:
     Invariant I2: Capacity.seats is the maximum number of confirmed bookings.
     """
     seats: int
-    zone: Optional[str] = None
+    zone: str | None = None
 
     def __post_init__(self):
         if self.seats < 0:

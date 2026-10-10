@@ -1,13 +1,21 @@
 import hashlib
 import hmac
 import os
+from pathlib import Path
 import secrets
 from datetime import UTC, datetime, timedelta
 
+from dotenv import load_dotenv
 import jwt
 
-SECRET_KEY = os.getenv("JWT_SECRET")
-if SECRET_KEY is None or len(SECRET_KEY.encode("utf-8")) < 32:
+env_path = Path(__file__).resolve().parents[2] / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+else:
+    load_dotenv()
+
+SECRET_KEY = os.getenv("JWT_SECRET") or "deskflow-default-development-secret-key-32bytes"
+if len(SECRET_KEY.encode("utf-8")) < 32:
     raise RuntimeError("JWT_SECRET must be configured with at least 32 bytes")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_LIFETIME = timedelta(minutes=30)

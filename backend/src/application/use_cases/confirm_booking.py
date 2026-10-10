@@ -3,6 +3,8 @@ from uuid import UUID
 
 from domain.entities.booking import Booking, BookingStatus, InvalidStateTransitionError
 from domain.entities.workspace import WorkspaceType
+from domain.events.event_bus import EventBus
+from domain.events.events import BookingConfirmed
 from domain.repositories.audit_log_repository import AuditLogRepository
 from domain.repositories.booking_repository import BookingRepository
 from domain.repositories.unit_of_work import UnitOfWork
@@ -18,11 +20,13 @@ class ConfirmBookingUseCase:
         workspace_repo: WorkspaceRepository,
         audit_log_repo: AuditLogRepository,
         unit_of_work: UnitOfWork,
+        event_bus: EventBus | None = None,
     ):
         self.booking_repo = booking_repo
         self.workspace_repo = workspace_repo
         self.audit_log_repo = audit_log_repo
         self.unit_of_work = unit_of_work
+        self.event_bus = event_bus
 
     async def execute(self, booking_id: UUID, now: datetime) -> Booking:
         if now.tzinfo is None:
@@ -58,7 +62,18 @@ class ConfirmBookingUseCase:
                 timestamp=now.replace(tzinfo=None),
                 reason="QR check-in",
             )
-            return confirmed
+
+        if self.event_bus is not None:
+            await self.event_bus.publish(
+                BookingConfirmed(
+                    booking_id=confirmed.id,
+                    workspace_id=confirmed.workspace_id,
+                    employee_id=confirmed.employee_id,
+                    slot=confirmed.slot,
+                )
+            )
+
+        return confirmed
 
 
 class BookingNotFoundError(Exception):

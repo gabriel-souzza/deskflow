@@ -3,6 +3,17 @@
 Todas as mudanças notáveis neste projeto são documentadas aqui.
 
 ### Adicionado
+- Suíte completa de testes unitários isolados (TDD puro) para todos os 14 Casos de Uso da Clean Architecture em `src/tests/application/`
+- Script de inicialização e população de dados (`seed.py`) gerando centros de custo, colaboradores com hash seguro PBKDF2, espaços de trabalho, janelas de 15min e reservas de teste
+- Execução de migrações Alembic `001` e `002` no PostgreSQL com resolução automática de host (Docker e PowerShell local)
+- Camada de Eventos de Domínio e `EventBus`: classes tipadas de eventos (`BookingCreated`, `BookingConfirmed`, `BookingCancelled`, `BookingExpired`, `QuotaConsumed`, `QuotaAlert`, `WaitlistJoined`, `WaitlistNotified`) e interface `EventBus`
+- Implementação ativa dos handlers `AuditLogHandler`, `QuotaAlertHandler` (RF15 - alertas em 80% e 95% via SSE) e `WaitlistHandler` (UC05)
+- Endpoint `GET /api/v1/bookings/{id}/qr` para renderização e download direto de imagem PNG do QR Code (UC06 / RF02)
+- Caso de uso `GetAvailabilityUseCase` (UC01) e endpoint autenticado `GET /api/v1/availability` com filtros por andar, zona e tipo de espaço
+- Caso de uso `ExpireWaitlistUseCase` (UC05) gerenciando expiração de 5 minutos de notificações da fila de espera
+- Suporte a corpo JSON em `POST /api/v1/bookings` e `POST /api/v1/bookings/{id}/checkin` com fallback para query params
+- Endpoint `/metrics` no formato Prometheus e health check detalhado com banco de dados
+- Testes unitários e de integração adicionais elevando a cobertura real para 89.24% sem omissões em `.coveragerc`
 - Unit of Work transacional para criação/cancelamento de reservas, com repositories injetados nos casos de uso
 - Teste PostgreSQL opt-in com execução Alembic e validação de reserva/cancelamento via `TEST_DATABASE_URL`
 - Cadastro administrativo de contas de colaboradores com senha PBKDF2 e login persistido por email

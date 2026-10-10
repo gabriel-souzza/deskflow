@@ -2,7 +2,6 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
 from uuid import UUID, uuid4
 
 from domain.value_objects.time_slot import TimeSlot
@@ -15,7 +14,7 @@ class BookingStatus(str, Enum):
     EXPIRED = "EXPIRED"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Booking:
     """
     Aggregate root representing a workspace reservation.
@@ -23,16 +22,16 @@ class Booking:
     """
 
     id: UUID = field(default_factory=uuid4)
-    workspace_id: UUID = field(default=None, kw_only=True)
-    employee_id: UUID = field(default=None, kw_only=True)
-    cost_center_id: UUID = field(default=None, kw_only=True)
-    slot: TimeSlot = field(default=None, kw_only=True)
+    workspace_id: UUID
+    employee_id: UUID
+    cost_center_id: UUID
+    slot: TimeSlot
     status: BookingStatus = BookingStatus.PENDING
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     modified_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    qr_token: Optional[str] = None
+    qr_token: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.workspace_id is None:
             raise ValueError("workspace_id is required")
         if self.employee_id is None:
@@ -42,13 +41,13 @@ class Booking:
         if self.slot is None:
             raise ValueError("slot is required")
         if not isinstance(self.status, BookingStatus):
-            raise ValueError(f"Invalid status: {self.status}")
+            raise TypeError(f"Invalid status: {self.status}")
 
     def confirm(self) -> "Booking":
         """Transition PENDING -> CONFIRMED (invariant I4)."""
         if self.status != BookingStatus.PENDING:
             raise InvalidStateTransitionError(f"Cannot confirm booking in status {self.status}")
-        return _replace(
+        return replace(
             self,
             status=BookingStatus.CONFIRMED,
             modified_at=datetime.now(UTC),
@@ -58,7 +57,7 @@ class Booking:
         """Transition CONFIRMED/PENDING -> CANCELLED (invariant I4)."""
         if self.status not in (BookingStatus.PENDING, BookingStatus.CONFIRMED):
             raise InvalidStateTransitionError(f"Cannot cancel booking in status {self.status}")
-        return _replace(
+        return replace(
             self,
             status=BookingStatus.CANCELLED,
             modified_at=datetime.now(UTC),
@@ -68,7 +67,7 @@ class Booking:
         """Transition PENDING -> EXPIRED (invariant I4)."""
         if self.status != BookingStatus.PENDING:
             raise InvalidStateTransitionError(f"Cannot expire booking in status {self.status}")
-        return _replace(
+        return replace(
             self,
             status=BookingStatus.EXPIRED,
             modified_at=datetime.now(UTC),
@@ -79,12 +78,5 @@ class Booking:
         return self.slot.duration_hours
 
 
-def _replace(obj, **changes):
-    """Helper to preserve immutability while updating fields."""
-    return replace(obj, **changes)
-
-
 class InvalidStateTransitionError(Exception):
     """Raised when a booking state transition is invalid."""
-
-    pass

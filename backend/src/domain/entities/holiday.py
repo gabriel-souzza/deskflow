@@ -3,14 +3,15 @@ from datetime import date
 from uuid import UUID, uuid4
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Holiday:
     """Entity representing a blocked holiday or optional working day."""
+
     id: UUID = field(default_factory=uuid4)
-    day: date = None  # Primary key is the date
+    day: date
     description: str = ""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.day is None:
             raise ValueError("day is required")
 

@@ -1,7 +1,7 @@
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Iterator
 
 
 @dataclass(frozen=True, slots=True)

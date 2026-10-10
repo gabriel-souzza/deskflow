@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import Optional
 from uuid import UUID
 
 from domain.entities.waitlist import Waitlist
@@ -12,7 +11,7 @@ class WaitlistRepository(ABC):
         self,
         workspace_id: UUID,
         employee_id: UUID,
-    ) -> Optional[Waitlist]:
+    ) -> Waitlist | None:
         """Find the Waitlist entry for a specific workspace-employee pair."""
         ...
 

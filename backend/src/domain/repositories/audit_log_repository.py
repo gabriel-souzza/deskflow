@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from domain.entities.audit_log import AuditLog
@@ -10,7 +9,7 @@ class AuditLogRepository(ABC):
     @abstractmethod
     async def create(
         self,
-        actor_id: Optional[UUID],
+        actor_id: UUID | None,
         action: str,
         entity_type: str,
         entity_id: str,

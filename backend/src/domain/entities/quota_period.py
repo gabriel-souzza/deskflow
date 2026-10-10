@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
@@ -11,13 +11,13 @@ class QuotaPeriod:
     Invariant I3: consumed_hours must never exceed total_hours (monotonic consumption).
     """
 
-    cost_center_id: UUID = None
-    period_start: date = None
-    period_end: date = None
+    cost_center_id: UUID
+    period_start: date
+    period_end: date
     total_hours: Decimal = Decimal(0)
     consumed_hours: Decimal = Decimal(0)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.cost_center_id is None:
             raise ValueError("cost_center_id is required")
         if self.period_start is None or self.period_end is None:
@@ -56,12 +56,8 @@ class QuotaPeriod:
                 )
             new_consumed = self.consumed_hours + hours
 
-        from dataclasses import replace
-
         return replace(self, consumed_hours=new_consumed)
 
 
 class QuotaExceededError(Exception):
     """Raised when quota consumption would exceed total."""
-
-    pass

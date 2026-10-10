@@ -2,12 +2,17 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.controllers.auth import require_auth, require_booking_owner
+from adapters.events.in_memory_event_bus import event_bus
 from adapters.events.sse_publisher import sse_publisher
 from adapters.repositories.audit_log_repo_postgres import AuditLogRepositoryPostgres
+from adapters.repositories.availability_window_repo_postgres import (
+    AvailabilityWindowRepositoryPostgres,
+)
 from adapters.repositories.booking_repo_postgres import BookingRepositoryPostgres
 from adapters.repositories.employee_repo_postgres import EmployeeRepositoryPostgres
 from adapters.repositories.quota_repo_postgres import QuotaRepositoryPostgres
@@ -32,6 +37,14 @@ from infra.unit_of_work import SqlAlchemyUnitOfWork
 router = APIRouter(prefix="/api/v1/bookings", tags=["bookings"])
 
 
+class CreateBookingRequest(BaseModel):
+    workspace_id: UUID
+    employee_id: UUID
+    cost_center_id: UUID
+    slot_start: datetime
+    slot_end: datetime
+
+
 def _aware_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
@@ -40,21 +53,35 @@ def _aware_utc(value: datetime) -> datetime:
 
 @router.post("", status_code=201)
 async def create_booking(
-    workspace_id: UUID,
-    employee_id: UUID,
-    cost_center_id: UUID,
-    slot_start: datetime,
-    slot_end: datetime,
     current_user: Annotated[dict, Depends(require_auth)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    payload: CreateBookingRequest | None = None,
+    workspace_id: UUID | None = Query(default=None),
+    employee_id: UUID | None = Query(default=None),
+    cost_center_id: UUID | None = Query(default=None),
+    slot_start: datetime | None = Query(default=None),
+    slot_end: datetime | None = Query(default=None),
 ):
-    require_booking_owner(current_user, employee_id)
-    start = _aware_utc(slot_start)
-    end = _aware_utc(slot_end)
+    ws_id = payload.workspace_id if payload else workspace_id
+    emp_id = payload.employee_id if payload else employee_id
+    cc_id = payload.cost_center_id if payload else cost_center_id
+    s_start = payload.slot_start if payload else slot_start
+    s_end = payload.slot_end if payload else slot_end
+
+    if not all([ws_id, emp_id, cc_id, s_start, s_end]):
+        raise HTTPException(
+            status_code=422,
+            detail="workspace_id, employee_id, cost_center_id, slot_start, and slot_end are required",
+        )
+
+    require_booking_owner(current_user, emp_id)
+    start = _aware_utc(s_start)
+    end = _aware_utc(s_end)
     try:
         slot = TimeSlot(start=start, end=end)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     use_case = CreateBookingUseCase(
         booking_repo=BookingRepositoryPostgres(db),
         workspace_repo=WorkspaceRepositoryPostgres(db),
@@ -62,9 +89,11 @@ async def create_booking(
         quota_repo=QuotaRepositoryPostgres(db),
         audit_log_repo=AuditLogRepositoryPostgres(db),
         unit_of_work=SqlAlchemyUnitOfWork(db),
+        window_repo=AvailabilityWindowRepositoryPostgres(db),
+        event_bus=event_bus,
     )
     result = await use_case.execute(
-        CreateBookingCommand(workspace_id, employee_id, cost_center_id, slot)
+        CreateBookingCommand(ws_id, emp_id, cc_id, slot)
     )
     if result.status_code != 201 or result.booking is None:
         raise HTTPException(status_code=result.status_code, detail=result.message)
@@ -83,7 +112,7 @@ async def create_booking(
     return {
         "id": str(booking_id),
         "status": "PENDING",
-        "workspace_id": str(workspace_id),
+        "workspace_id": str(ws_id),
         "qr_token": qr_token,
     }
 
@@ -105,6 +134,7 @@ async def cancel_booking(
             quota_repo=QuotaRepositoryPostgres(db),
             audit_log_repo=AuditLogRepositoryPostgres(db),
             unit_of_work=SqlAlchemyUnitOfWork(db),
+            event_bus=event_bus,
         ).execute(
             id,
             requester_id,

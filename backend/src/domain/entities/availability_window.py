@@ -1,6 +1,5 @@
-from dataclasses import dataclass, field
-from typing import Optional
-from uuid import UUID, uuid4
+from dataclasses import dataclass
+from uuid import UUID
 
 from domain.value_objects.capacity import Capacity
 

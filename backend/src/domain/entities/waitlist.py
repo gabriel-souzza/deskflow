@@ -1,22 +1,21 @@
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import Optional
 from uuid import UUID, uuid4
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Waitlist:
     """Aggregate root representing a FIFO waitlist entry."""
 
     id: UUID = field(default_factory=uuid4)
-    workspace_id: UUID = None
-    employee_id: UUID = None
-    desired_slot_start: datetime = None
-    desired_slot_end: datetime = None
+    workspace_id: UUID
+    employee_id: UUID
+    desired_slot_start: datetime
+    desired_slot_end: datetime
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    notified_at: Optional[datetime] = None
+    notified_at: datetime | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.workspace_id is None:
             raise ValueError("workspace_id required")
         if self.employee_id is None:

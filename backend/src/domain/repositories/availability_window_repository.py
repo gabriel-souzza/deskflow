@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import Optional
 from uuid import UUID
 
 from domain.entities.availability_window import AvailabilityWindow
@@ -12,7 +11,7 @@ class AvailabilityWindowRepository(ABC):
         workspace_id: UUID,
         day: str,
         slot_index: int,
-    ) -> Optional[AvailabilityWindow]:
+    ) -> AvailabilityWindow | None:
         """Retrieve an availability window by composite key."""
         ...
 

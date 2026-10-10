@@ -5,10 +5,10 @@ from contextlib import asynccontextmanager
 from datetime import date
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.controllers.admin_controller import router as admin_router
@@ -18,6 +18,8 @@ from adapters.controllers.integration_controller import router as integration_ro
 from adapters.controllers.report_controller import router as report_router
 from adapters.controllers.waitlist_controller import router as waitlist_router
 from adapters.controllers.workspace_controller import router as workspace_router
+from adapters.events.in_memory_event_bus import event_bus
+from adapters.events.quota_alert_handler import QuotaAlertHandler
 from adapters.events.sse_publisher import sse_publisher
 from adapters.repositories.availability_window_repo_postgres import (
     AvailabilityWindowRepositoryPostgres,
@@ -26,28 +28,51 @@ from adapters.repositories.booking_repo_postgres import BookingRepositoryPostgre
 from adapters.repositories.holiday_repo_postgres import HolidayRepositoryPostgres
 from adapters.repositories.waitlist_repo_postgres import WaitlistRepositoryPostgres
 from adapters.repositories.workspace_repo_postgres import WorkspaceRepositoryPostgres
+from application.use_cases.expire_waitlist import ExpireWaitlistUseCase
 from application.use_cases.generate_daily_availability import GenerateDailyAvailabilityUseCase
 from application.use_cases.notify_waitlist import NotifyWaitlistUseCase
 from application.use_cases.release_expired import ReleaseExpiredBookingsUseCase
+from domain.events.events import QuotaConsumed
 from infra.database import SessionLocal, get_db
 from infra.models import EmployeeORM
 from infra.security import create_access_token, verify_password
 from infra.unit_of_work import SqlAlchemyUnitOfWork
 
+# Register global domain event handlers
+quota_alert_handler = QuotaAlertHandler(sse_publisher)
+event_bus.subscribe(QuotaConsumed, quota_alert_handler.handle_quota_consumed)
+
 
 async def release_expired_bookings_job() -> None:
-    released = []
     async with SessionLocal() as session:
-        async with session.begin():
-            released = await ReleaseExpiredBookingsUseCase(
-                BookingRepositoryPostgres(session)
-            ).execute()
+        uow = SqlAlchemyUnitOfWork(session)
+        booking_repo = BookingRepositoryPostgres(session)
+        waitlist_repo = WaitlistRepositoryPostgres(session)
+        ws_repo = WorkspaceRepositoryPostgres(session)
+
+        # Release bookings past tolerance
+        released = await ReleaseExpiredBookingsUseCase(
+            booking_repo=booking_repo,
+            unit_of_work=uow,
+            event_bus=event_bus,
+        ).execute()
+
         for booking in released:
             await NotifyWaitlistUseCase(
-                WaitlistRepositoryPostgres(session),
+                waitlist_repo,
                 sse_publisher,
-                SqlAlchemyUnitOfWork(session),
+                uow,
             ).execute(booking.workspace_id, booking.slot)
+
+        # Expire 5-minute waitlist notifications where slot was not booked
+        expire_waitlist_use_case = ExpireWaitlistUseCase(
+            waitlist_repo=waitlist_repo,
+            booking_repo=booking_repo,
+            workspace_repo=ws_repo,
+            publisher=sse_publisher,
+            unit_of_work=uow,
+        )
+        await expire_waitlist_use_case.execute()
 
 
 async def generate_daily_availability_job() -> None:
@@ -101,7 +126,7 @@ Workspace reservation system for hybrid work environments.
 **Features:**
 - Real-time availability with 15-minute slots
 - QR Code check-in with 10-minute tolerance
-- Quota management per cost center
+- Quota management per cost center with 80%/95% alerts
 - Waitlist with SSE notifications
 - JWT authentication
 
@@ -166,8 +191,24 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/health")
-async def health_check():
-    return {"status": "ok"}
+async def health_check(db: AsyncSession = Depends(get_db)):
+    try:
+        await db.execute(text("SELECT 1"))
+        db_status = "ok"
+    except Exception:
+        db_status = "degraded"
+    return {"status": "ok", "database": db_status}
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus-compatible health metrics format (RNF01/RNF02)."""
+    lines = [
+        "# HELP deskflow_up System availability status (1 = up)",
+        "# TYPE deskflow_up gauge",
+        "deskflow_up 1",
+    ]
+    return Response(content="\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
 
 if __name__ == "__main__":

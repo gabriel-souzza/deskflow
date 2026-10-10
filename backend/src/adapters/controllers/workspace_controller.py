@@ -1,6 +1,6 @@
 import json
-from datetime import date, datetime, time, timedelta
-from typing import Literal
+from datetime import date
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,14 +8,17 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from adapters.controllers.auth import require_admin
+from adapters.controllers.auth import require_admin, require_auth
 from adapters.events.sse_publisher import sse_publisher
+from adapters.repositories.booking_repo_postgres import BookingRepositoryPostgres
+from adapters.repositories.holiday_repo_postgres import HolidayRepositoryPostgres
 from adapters.repositories.workspace_repo_postgres import WorkspaceRepositoryPostgres
+from application.use_cases.get_availability import GetAvailabilityUseCase
 from application.use_cases.manage_workspace import ManageWorkspaceUseCase
 from domain.entities.workspace import Workspace, WorkspaceType
 from domain.repositories.workspace_repository import WorkspaceInUseError
 from infra.database import get_db
-from infra.models import BookingORM, WorkspaceORM
+from infra.models import WorkspaceORM
 from infra.unit_of_work import SqlAlchemyUnitOfWork
 
 router = APIRouter(tags=["workspaces"])
@@ -59,36 +62,35 @@ async def get_availability(
     if workspace is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    day_start = datetime.combine(day, time(8))
-    day_end = datetime.combine(day, time(18))
-    result = await db.execute(
-        select(BookingORM.slot_start, BookingORM.slot_end).where(
-            BookingORM.workspace_id == id,
-            BookingORM.status.in_(("PENDING", "CONFIRMED")),
-            BookingORM.slot_start < day_end,
-            BookingORM.slot_end > day_start,
-        )
+    use_case = GetAvailabilityUseCase(
+        WorkspaceRepositoryPostgres(db),
+        BookingRepositoryPostgres(db),
+        HolidayRepositoryPostgres(db),
     )
-    bookings = result.all()
-    slots = []
-    for slot_index in range(40):
-        start = day_start + timedelta(minutes=15 * slot_index)
-        end = start + timedelta(minutes=15)
-        occupied = sum(
-            1
-            for booking_start, booking_end in bookings
-            if booking_start < end and booking_end > start
-        )
-        slots.append(
-            {
-                "slot_index": slot_index,
-                "start": start.isoformat(),
-                "end": end.isoformat(),
-                "capacity": workspace.capacity,
-                "seats_available": max(0, workspace.capacity - occupied),
-            }
-        )
+    result = await use_case.execute(day=day, workspace_id=id)
+    workspaces_found = result.get("workspaces", [])
+    slots = workspaces_found[0]["slots"] if workspaces_found else []
     return {"workspace_id": str(id), "day": day.isoformat(), "slots": slots}
+
+
+@router.get("/api/v1/availability")
+async def get_all_availability(
+    current_user: Annotated[dict, Depends(require_auth)],
+    day: date = Query(...),
+    floor: str | None = Query(default=None),
+    zone: str | None = Query(default=None),
+    type: Literal["estacao", "sala"] | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """GET /api/v1/availability — UC01: Consultar Disponibilidade com filtros."""
+    ws_type = WorkspaceType(type) if type else None
+    use_case = GetAvailabilityUseCase(
+        WorkspaceRepositoryPostgres(db),
+        BookingRepositoryPostgres(db),
+        HolidayRepositoryPostgres(db),
+    )
+    result = await use_case.execute(day=day, floor=floor, zone=zone, workspace_type=ws_type)
+    return result
 
 
 @router.post("/api/v1/admin/workspaces", status_code=201)

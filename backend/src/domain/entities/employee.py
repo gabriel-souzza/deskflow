@@ -1,19 +1,19 @@
 from dataclasses import dataclass, field
-from uuid import UUID, uuid4
 from datetime import date
-from typing import Optional
+from uuid import UUID, uuid4
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Employee:
     """Aggregate root representing an employee who can make bookings."""
+
     id: UUID = field(default_factory=uuid4)
-    name: str = None
-    email: str = None
-    cost_center_id: UUID = None
+    name: str
+    email: str
+    cost_center_id: UUID
     is_eligible_for_booking: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.name is None:
             raise ValueError("name is required")
         if self.email is None:

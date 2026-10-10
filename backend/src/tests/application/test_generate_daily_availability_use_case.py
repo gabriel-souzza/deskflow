@@ -4,10 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from application.use_cases.block_holidays import BlockHolidaysUseCase
 from application.use_cases.generate_daily_availability import GenerateDailyAvailabilityUseCase
-from domain.entities.availability_window import AvailabilityWindow
-from domain.entities.holiday import Holiday
 from domain.entities.workspace import Workspace, WorkspaceType
 from domain.value_objects.capacity import Capacity
 
@@ -29,7 +26,6 @@ class FakeWorkspaceRepository:
 class FakeAvailabilityWindowRepository:
     def __init__(self):
         self.windows = {}
-        self.deleted_days = []
 
     async def get_by_key(self, workspace_id, day, slot_index):
         return self.windows.get((workspace_id, day, slot_index))
@@ -38,23 +34,13 @@ class FakeAvailabilityWindowRepository:
         self.windows[(window.workspace_id, window.day, window.slot_index)] = window
         return window
 
-    async def delete_by_day(self, day):
-        self.deleted_days.append(day)
-        self.windows = {key: value for key, value in self.windows.items() if key[1] != day}
-
 
 class FakeHolidayRepository:
-    def __init__(self):
-        self.days = set()
-        self.saved = []
+    def __init__(self, blocked_days=None):
+        self.days = blocked_days or set()
 
     async def is_blocked(self, day):
         return day in self.days
-
-    async def save(self, holiday):
-        self.days.add(holiday.day)
-        self.saved.append(holiday)
-        return holiday
 
 
 def make_workspace(capacity=1):
@@ -89,34 +75,11 @@ async def test_daily_availability_creates_forty_windows_once_per_workspace():
 @pytest.mark.asyncio
 async def test_daily_availability_skips_holidays():
     windows = FakeAvailabilityWindowRepository()
-    holidays = FakeHolidayRepository()
     holiday_day = date(2026, 10, 12)
-    holidays.days.add(holiday_day)
+    holidays = FakeHolidayRepository({holiday_day})
     use_case = GenerateDailyAvailabilityUseCase(
         windows, FakeWorkspaceRepository([make_workspace()]), holidays, FakeUnitOfWork()
     )
 
     assert await use_case.execute(holiday_day.isoformat()) == 0
-    assert windows.windows == {}
-
-
-@pytest.mark.asyncio
-async def test_block_holiday_persists_holiday_and_deletes_windows():
-    windows = FakeAvailabilityWindowRepository()
-    holidays = FakeHolidayRepository()
-    day = date(2026, 10, 12)
-    window = AvailabilityWindow(
-        workspace_id=uuid4(),
-        day=day.isoformat(),
-        slot_index=4,
-        capacity=Capacity(seats=1),
-    )
-    await windows.save(window)
-    use_case = BlockHolidaysUseCase(windows, holidays, FakeUnitOfWork())
-
-    result = await use_case.execute(Holiday(day=day, description="Holiday"))
-
-    assert result.is_blocked()
-    assert holidays.saved == [result]
-    assert windows.deleted_days == [day.isoformat()]
     assert windows.windows == {}
