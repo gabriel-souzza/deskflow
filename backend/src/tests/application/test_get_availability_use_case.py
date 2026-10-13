@@ -78,3 +78,26 @@ async def test_get_availability_returns_holiday_status():
     res = await use_case.execute(day=holiday)
     assert res["is_holiday"] is True
     assert res["workspaces"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_availability_filters_by_workspace_id_and_zone():
+    ws1 = Workspace(
+        id=uuid4(), code="A1", floor="1", zone="open", type=WorkspaceType.STATION, capacity=1
+    )
+    ws2 = Workspace(
+        id=uuid4(), code="A2", floor="1", zone="quiet", type=WorkspaceType.STATION, capacity=1
+    )
+    ws_repo = MockWorkspaceRepo([ws1, ws2])
+    use_case = GetAvailabilityUseCase(ws_repo, MockBookingRepo())
+
+    # Filter by workspace_id
+    res_ws = await use_case.execute(day=date(2026, 10, 15), workspace_id=ws1.id)
+    assert len(res_ws["workspaces"]) == 1
+    assert res_ws["workspaces"][0]["code"] == "A1"
+
+    # Filter by zone
+    res_zone = await use_case.execute(day=date(2026, 10, 15), zone="quiet")
+    assert len(res_zone["workspaces"]) == 1
+    assert res_zone["workspaces"][0]["code"] == "A2"
+

@@ -209,3 +209,65 @@ async def test_create_booking_rejects_mismatched_cost_center_and_outside_hours()
     outside_hours = await use_case.execute(replace(command, slot=outside_slot))
     assert outside_hours.status_code == 409
 
+
+class FakeWindowRepo:
+    def __init__(self, window):
+        self.window = window
+        self.saved = []
+
+    async def get_by_key(self, _workspace_id, _day, _slot_index):
+        return self.window
+
+    async def save(self, window):
+        self.saved.append(window)
+        return window
+
+
+class FakeEventBus:
+    def __init__(self):
+        self.published = []
+
+    async def publish(self, event):
+        self.published.append(event)
+
+
+@pytest.mark.asyncio
+async def test_create_booking_handles_window_repo_and_event_bus():
+    from domain.entities.availability_window import AvailabilityWindow
+    from domain.value_objects.capacity import Capacity
+
+    use_case, command, _booking_repo, _quota_repo, _audit_repo = build_booking_dependencies()
+    window = AvailabilityWindow(
+        workspace_id=command.workspace_id,
+        day=command.slot.start.date().isoformat(),
+        slot_index=4,
+        capacity=Capacity(seats=1),
+        version_id=1,
+    )
+    window_repo = FakeWindowRepo(window)
+    bus = FakeEventBus()
+    use_case.window_repo = window_repo
+    use_case.event_bus = bus
+
+    result = await use_case.execute(command)
+
+    assert result.status_code == 201
+    assert len(window_repo.saved) == 2  # slot is 30 min = 2 windows
+    assert window_repo.saved[0].version_id == 2
+    assert len(bus.published) == 2  # QuotaConsumed, BookingCreated
+
+
+class QuotaRepoWithLookupError:
+    async def get_for_period(self, _cost_center_id, _day):
+        raise LookupError("Quota not found for cost center")
+
+
+@pytest.mark.asyncio
+async def test_create_booking_quota_not_found_returns_404():
+    use_case, command, _booking_repo, _quota_repo, _audit_repo = build_booking_dependencies()
+    use_case.quota_repo = QuotaRepoWithLookupError()
+
+    result = await use_case.execute(command)
+    assert result.status_code == 404
+
+

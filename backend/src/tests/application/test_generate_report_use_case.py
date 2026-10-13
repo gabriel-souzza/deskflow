@@ -84,3 +84,21 @@ async def test_report_rejects_reversed_period():
 
     with pytest.raises(ValueError, match="end date"):
         await use_case.execute(date(2026, 10, 13), date(2026, 10, 12))
+
+
+@pytest.mark.asyncio
+async def test_report_skips_booking_with_missing_workspace():
+    start = datetime.combine(date(2026, 10, 12), time(9), tzinfo=UTC)
+    booking_orphan = Booking(
+        workspace_id=uuid4(),  # not in repo
+        employee_id=uuid4(),
+        cost_center_id=uuid4(),
+        slot=TimeSlot(start, start + timedelta(minutes=30)),
+        status=BookingStatus.CONFIRMED,
+    )
+    use_case = GenerateReportUseCase(
+        FakeBookingRepository([booking_orphan]), FakeWorkspaceRepository([])
+    )
+    report = await use_case.execute(date(2026, 10, 12), date(2026, 10, 12))
+    assert len(report["bookings"]) == 0
+

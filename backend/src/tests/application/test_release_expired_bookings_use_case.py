@@ -46,3 +46,43 @@ async def test_release_expired_bookings_expires_and_frees_bookings():
     assert repository.saved == released
     assert repository.deleted == [booking.id]
     assert repository.cutoffs[0] - repository.cutoffs[1] == timedelta(minutes=5)
+
+
+class FakeUnitOfWork:
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def transaction(self):
+        yield
+
+
+class FakeEventBus:
+    def __init__(self):
+        self.published = []
+
+    async def publish(self, event):
+        self.published.append(event)
+
+
+@pytest.mark.asyncio
+async def test_release_expired_bookings_with_uow_and_event_bus():
+    booking = Booking(
+        workspace_id=uuid4(),
+        employee_id=uuid4(),
+        cost_center_id=uuid4(),
+        slot=TimeSlot(
+            start=datetime(2020, 1, 1, 9, 0, tzinfo=UTC),
+            end=datetime(2020, 1, 1, 9, 15, tzinfo=UTC),
+        ),
+    )
+    repository = FakeBookingRepository([booking])
+    uow = FakeUnitOfWork()
+    bus = FakeEventBus()
+
+    released = await ReleaseExpiredBookingsUseCase(
+        repository, unit_of_work=uow, event_bus=bus
+    ).execute()
+
+    assert len(released) == 1
+    assert len(bus.published) == 1
+

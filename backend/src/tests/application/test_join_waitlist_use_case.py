@@ -130,3 +130,72 @@ async def test_join_waitlist_fails_when_workspace_not_found_or_not_eligible():
 
     with pytest.raises(ValueError, match="Workspace not found"):
         await use_case.execute(workspace_id, employee_id, slot)
+
+    # Employee not found
+    workspace = Workspace(
+        id=workspace_id,
+        code="W-1",
+        floor="1",
+        zone="test",
+        type=WorkspaceType.STATION,
+        capacity=1,
+    )
+    use_case_no_emp = JoinWaitlistUseCase(
+        FakeWaitlistRepository([]),
+        FakeWorkspaceRepository(workspace),
+        FakeEmployeeRepository(None),
+        FakeBookingRepository(),
+        FakeUnitOfWork(),
+    )
+    with pytest.raises(ValueError, match="Employee not found"):
+        await use_case_no_emp.execute(workspace_id, employee_id, slot)
+
+    # Employee not eligible
+    use_case_ineligible = JoinWaitlistUseCase(
+        FakeWaitlistRepository([]),
+        FakeWorkspaceRepository(workspace),
+        FakeEmployeeRepository(employee_not_eligible),
+        FakeBookingRepository(),
+        FakeUnitOfWork(),
+    )
+    with pytest.raises(ValueError, match="Employee is not eligible to book"):
+        await use_case_ineligible.execute(workspace_id, employee_id, slot)
+
+    # Eligible employee
+    employee_eligible = Employee(
+        id=employee_id,
+        name="Employee",
+        email="employee@example.test",
+        cost_center_id=uuid4(),
+        is_eligible_for_booking=True,
+    )
+
+    # Existing waitlist for different slot
+    other_slot_start = slot_start + timedelta(days=1)
+    existing_other_slot = Waitlist(
+        workspace_id=workspace_id,
+        employee_id=employee_id,
+        desired_slot_start=other_slot_start,
+        desired_slot_end=other_slot_start + timedelta(minutes=15),
+    )
+    use_case_diff_slot = JoinWaitlistUseCase(
+        FakeWaitlistRepository([existing_other_slot]),
+        FakeWorkspaceRepository(workspace),
+        FakeEmployeeRepository(employee_eligible),
+        FakeBookingRepository(count=1),
+        FakeUnitOfWork(),
+    )
+    with pytest.raises(ValueError, match="Employee already has a waitlist entry"):
+        await use_case_diff_slot.execute(workspace_id, employee_id, slot)
+
+    # Workspace still has capacity (occupied < capacity)
+    use_case_has_capacity = JoinWaitlistUseCase(
+        FakeWaitlistRepository([]),
+        FakeWorkspaceRepository(workspace),
+        FakeEmployeeRepository(employee_eligible),
+        FakeBookingRepository(count=0),
+        FakeUnitOfWork(),
+    )
+    with pytest.raises(ValueError, match="Workspace still has capacity"):
+        await use_case_has_capacity.execute(workspace_id, employee_id, slot)
+
