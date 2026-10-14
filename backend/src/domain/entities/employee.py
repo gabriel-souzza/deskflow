@@ -11,6 +11,7 @@ class Employee:
     name: str
     email: str
     cost_center_id: UUID
+    role: str = "employee"
     is_eligible_for_booking: bool = False
 
     def __post_init__(self) -> None:

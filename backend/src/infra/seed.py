@@ -90,7 +90,7 @@ async def seed_database() -> None:
         await session.flush()
         print("[OK] Cotas do mes corrente configuradas.")
 
-        # 3. Colaboradores (IDs canônicos fixos)
+        # 3. Colaboradores (IDs canônicos fixos com role no banco)
         employees_data = [
             (
                 uuid.UUID("79e2f3c0-8981-4ca7-b0e4-f43a4116facf"),
@@ -98,6 +98,7 @@ async def seed_database() -> None:
                 "admin@deskflow.com",
                 "Admin123456!",
                 centers["Engenharia de Software"].id,
+                "admin",
                 True,
             ),
             (
@@ -106,6 +107,7 @@ async def seed_database() -> None:
                 "maria.silva@deskflow.com",
                 "Colaborador123!",
                 centers["Engenharia de Software"].id,
+                "employee",
                 True,
             ),
             (
@@ -114,6 +116,7 @@ async def seed_database() -> None:
                 "joao.santos@deskflow.com",
                 "Colaborador123!",
                 centers["Recursos Humanos"].id,
+                "employee",
                 True,
             ),
             (
@@ -122,6 +125,7 @@ async def seed_database() -> None:
                 "ana.costa@deskflow.com",
                 "Colaborador123!",
                 centers["Design & Produto"].id,
+                "employee",
                 False,  # Não elegível para testar validação de política presencial
             ),
             (
@@ -130,11 +134,12 @@ async def seed_database() -> None:
                 "carlos.oliveira@deskflow.com",
                 "Colaborador123!",
                 centers["Financeiro"].id,
+                "employee",
                 True,
             ),
         ]
         created_employees = {}
-        for emp_id, name, email, password, cc_id, eligible in employees_data:
+        for emp_id, name, email, password, cc_id, emp_role, eligible in employees_data:
             existing_emp = await session.scalar(
                 select(EmployeeORM).where(
                     (EmployeeORM.id == emp_id) | (EmployeeORM.email == email)
@@ -147,11 +152,13 @@ async def seed_database() -> None:
                     email=email,
                     password_hash=hash_password(password),
                     cost_center_id=cc_id,
+                    role=emp_role,
                     is_eligible_for_booking=eligible,
                 )
                 session.add(emp)
                 created_employees[email] = emp
             else:
+                existing_emp.role = emp_role
                 created_employees[email] = existing_emp
         await session.flush()
         print("[OK] Colaboradores criados com senhas de teste.")

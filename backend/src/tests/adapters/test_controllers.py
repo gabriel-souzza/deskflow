@@ -345,6 +345,39 @@ def test_admin_quotas_rejects_non_admin_token(api_client):
     assert response.status_code == 403
 
 
+def test_admin_account_receives_admin_role_and_accesses_admin_routes(api_client):
+    client, sessions = api_client
+
+    async def seed_admin():
+        from infra.security import hash_password
+
+        async with sessions() as session:
+            admin_emp = EmployeeORM(
+                name="Admin User",
+                email="admin@deskflow.com",
+                password_hash=hash_password("Admin123456!"),
+                role="admin",
+                is_eligible_for_booking=True,
+            )
+            session.add(admin_emp)
+            await session.commit()
+            return str(admin_emp.id)
+
+    asyncio.run(seed_admin())
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin@deskflow.com", "password": "Admin123456!"},
+    )
+    assert login.status_code == 200
+    claims = verify_token(login.json()["access_token"])
+    assert claims["role"] == "admin"
+
+    auth_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    quotas_response = client.get("/api/v1/admin/quotas", headers=auth_headers)
+    assert quotas_response.status_code == 200
+
+
 def test_jwt_round_trip():
     token = create_access_token({"sub": "employee-1", "role": "admin"}, expires_delta=None)
     payload = verify_token(token)

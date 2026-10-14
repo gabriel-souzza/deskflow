@@ -70,6 +70,7 @@ class EmployeeORM(Base):
     name = Column(String, nullable=False)
     email = Column(String, nullable=False, unique=True)
     password_hash = Column(String, nullable=True)
+    role = Column(String, nullable=False, default="employee", server_default="employee")
     cost_center_id = Column(SA_UUID(as_uuid=True), ForeignKey("cost_centers.id"))
     is_eligible_for_booking = Column(Boolean, default=False)
 

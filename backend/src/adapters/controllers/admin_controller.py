@@ -56,6 +56,7 @@ class AccountCreate(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=12, max_length=128)
     cost_center_id: UUID
+    role: str = Field(default="employee", pattern=r"^(employee|admin)$")
     is_eligible_for_booking: bool = False
 
     @field_validator("name")
@@ -94,6 +95,7 @@ async def create_account(
         email=payload.email,
         password_hash=hash_password(payload.password),
         cost_center_id=payload.cost_center_id,
+        role=payload.role,
         is_eligible_for_booking=payload.is_eligible_for_booking,
     )
     db.add(employee)
@@ -108,6 +110,7 @@ async def create_account(
         "name": employee.name,
         "email": employee.email,
         "cost_center_id": str(employee.cost_center_id),
+        "role": employee.role,
         "is_eligible_for_booking": employee.is_eligible_for_booking,
     }
 

@@ -3,6 +3,8 @@
 Todas as mudanças notáveis neste projeto são documentadas aqui.
 
 ### Adicionado
+- Coluna `role` persistida na tabela `employees` com migração Alembic `003_add_employee_role.py`, mapeada na entidade de domínio `Employee` e no schema `AccountCreate`
+- Testes automatizados validando atribuição de papel `admin` e rejeição de rotas administrativas para papéis `employee`
 - Suíte completa de testes unitários isolados (TDD puro) para todos os 14 Casos de Uso da Clean Architecture em `src/tests/application/`
 - Script de inicialização e população de dados (`seed.py`) gerando centros de custo, colaboradores com hash seguro PBKDF2, espaços de trabalho, janelas de 15min e reservas de teste
 - Execução de migrações Alembic `001` e `002` no PostgreSQL com resolução automática de host (Docker e PowerShell local)
@@ -29,6 +31,9 @@ Todas as mudanças notáveis neste projeto são documentadas aqui.
 - docs/plano-implementacao-backend.md (plano completo)
 
 ### Corrigido
+- Autorização RBAC corrigida: removido hardcode de papel em `main.py`; o papel agora é lido diretamente do banco de dados (`employee.role`)
+- Correção no `SqlAlchemyUnitOfWork` suportando transações ativas via `begin_nested()` e prevenindo falhas de commit no scheduler
+- Script `seed.py` atualizado para ser determinístico e idempotente com UUIDs fixos canônicos
 - Reservas agora exigem autenticação e só podem ser canceladas pelo titular ou por admin; JWT expira em 30 minutos por padrão
 - Removidos logins e segredos padrão; Compose e migrações exigem configuração explícita de credenciais
 - Gate de cobertura corrigido para medir os módulos do backend e exigir 80%

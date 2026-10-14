@@ -24,6 +24,7 @@ class EmployeeRepositoryPostgres(EmployeeRepository):
             name=row.name,
             email=row.email,
             cost_center_id=row.cost_center_id,
+            role=getattr(row, "role", "employee"),
             is_eligible_for_booking=bool(row.is_eligible_for_booking),
         )
 
@@ -35,6 +36,7 @@ class EmployeeRepositoryPostgres(EmployeeRepository):
         row.name = employee.name
         row.email = employee.email
         row.cost_center_id = employee.cost_center_id
+        row.role = employee.role
         row.is_eligible_for_booking = employee.is_eligible_for_booking
         await self.session.flush()
         return employee
