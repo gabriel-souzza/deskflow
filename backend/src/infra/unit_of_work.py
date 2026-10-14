@@ -10,5 +10,10 @@ class SqlAlchemyUnitOfWork:
 
     @asynccontextmanager
     async def transaction(self) -> AsyncGenerator[None, None]:
-        async with self.session.begin():
-            yield
+        if self.session.in_transaction():
+            async with self.session.begin_nested():
+                yield
+            await self.session.commit()
+        else:
+            async with self.session.begin():
+                yield

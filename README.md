@@ -203,8 +203,10 @@ cd apps/web
 npm install
 
 # Testes
-uv run pytest src/tests/domain -v
-uv run pytest src/tests/application -v
+uv run pytest src/tests/domain -v --cov=src/domain/entities --cov=src/domain/value_objects --cov-fail-under=80
+uv run pytest src/tests/application -v --cov=src/application --cov-fail-under=80
+uv run pytest src/tests/integration/test_postgres_booking.py -v
+uv run pytest src/tests -v --cov=src --cov-fail-under=80
 ```
 
 Para rodar a API localmente, configure `DATABASE_URL` com host `localhost` e execute `uv run --env-file .env --directory src uvicorn main:app --host 127.0.0.1 --port 8000`.

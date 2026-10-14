@@ -28,7 +28,17 @@ from main import app
 
 @pytest.mark.integration
 def test_postgres_migrations_booking_and_quota_refund(monkeypatch):
+    from pathlib import Path
+
+    from dotenv import load_dotenv
+
     database_url = os.getenv("TEST_DATABASE_URL")
+    if not database_url:
+        env_path = Path(__file__).resolve().parents[3] / ".env"
+        if env_path.exists():
+            load_dotenv(env_path)
+            database_url = os.getenv("TEST_DATABASE_URL")
+
     if not database_url:
         pytest.skip("Set TEST_DATABASE_URL to a disposable PostgreSQL database")
 
