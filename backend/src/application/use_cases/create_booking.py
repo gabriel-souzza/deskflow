@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -8,7 +8,10 @@ from domain.entities.workspace import WorkspaceType
 from domain.events.event_bus import EventBus
 from domain.events.events import BookingCreated, QuotaConsumed
 from domain.repositories.audit_log_repository import AuditLogRepository
-from domain.repositories.availability_window_repository import AvailabilityWindowRepository
+from domain.repositories.availability_window_repository import (
+    AvailabilityWindowRepository,
+    RepositoryConflictError,
+)
 from domain.repositories.booking_repository import BookingRepository
 from domain.repositories.employee_repository import EmployeeRepository
 from domain.repositories.quota_repository import QuotaRepository
@@ -114,8 +117,11 @@ class CreateBookingUseCase:
                 for slot_index in slot_indices:
                     win = await self.window_repo.get_by_key(cmd.workspace_id, day_key, slot_index)
                     if win is not None:
-                        updated_win = replace(win, version_id=win.version_id + 1)
-                        await self.window_repo.save(updated_win)
+                        updated_win = win.increment_version()
+                        try:
+                            await self.window_repo.save(updated_win, expected_version=win.version_id)
+                        except RepositoryConflictError as exc:
+                            return CreateBookingResult(None, 409, str(exc))
 
             booking = Booking(
                 workspace_id=cmd.workspace_id,

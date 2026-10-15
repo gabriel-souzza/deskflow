@@ -25,6 +25,8 @@ jobs:
         run: uv sync --project . --all-extras --dev
       - name: Run migrations
         working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/deskflow
         run: uv run --project . alembic -c src/infra/migrations/alembic.ini upgrade head
       - name: Run lint and typecheck
         working-directory: ./backend
@@ -33,4 +35,7 @@ jobs:
           uv run --project . mypy src/domain src/application
       - name: Run tests
         working-directory: ./backend
-        run: uv run --project . pytest src/tests/domain src/tests/application src/tests/adapters -v --cov=src --cov-fail-under=80 --cov-report=term
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/deskflow
+          TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/deskflow
+        run: uv run --project . pytest src/tests/domain src/tests/application src/tests/adapters src/tests/integration -v --cov=src --cov-fail-under=80 --cov-report=term

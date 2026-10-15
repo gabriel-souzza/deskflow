@@ -178,6 +178,25 @@ Este documento contém todos os **parâmetros, IDs reais semeados no banco de da
 
 ---
 
+### 6.5.1 Listar Reservas (`GET /api/v1/bookings`)
+
+- **Autenticação**: Bearer Token
+- **Query Parameters**:
+  - `employee_id`: UUID opcional (obrigatório se admin quiser ver de terceiro; colaboradores consultam suas próprias reservas por padrão)
+  - `status`: opcional (`PENDING`, `CONFIRMED`, `CANCELLED`, `EXPIRED`)
+- **Retorno**: Lista de reservas do colaborador com IDs, status, início, fim e timestamps.
+
+---
+
+### 6.5.2 Obter Detalhes da Reserva (`GET /api/v1/bookings/{id}`)
+
+- **Autenticação**: Bearer Token (Titular ou Admin)
+- **Path Parameter**:
+  - `id`: `849bd1b4-84e4-429d-b0a9-2c2cda39af2c`
+- **Retorno**: Dados completos da reserva individual.
+
+---
+
 ### 6.6 Obter QR Code PNG da Reserva (`GET /api/v1/bookings/{id}/qr`)
 
 - **Autenticação**: Bearer Token
@@ -242,9 +261,27 @@ Este documento contém todos os **parâmetros, IDs reais semeados no banco de da
 }
 ```
 
+#### Listar Contas de Colaboradores (`GET /api/v1/admin/accounts`):
+- **Autenticação**: Bearer Token de Admin.
+- **Retorno**: Lista de colaboradores com ID, nome, email, papel, centro de custo e elegibilidade.
+
 ---
 
-### 6.11 Listar e Gerenciar Cotas de Centros de Custo
+### 6.11 Centros de Custo e Cotas
+
+#### Listar Centros de Custo (`GET /api/v1/admin/cost-centers`):
+- **Autenticação**: Bearer Token de Admin.
+- **Retorno**: Lista de centros de custo cadastrados com IDs, nomes e cotas configuradas.
+
+#### Criar Novo Centro de Custo (`POST /api/v1/admin/cost-centers`):
+- **Autenticação**: Bearer Token de Admin.
+- **Request Body**:
+```json
+{
+  "name": "Logística e Suprimentos",
+  "monthly_quota_hours": 100.0
+}
+```
 
 #### Listar Cotas (`GET /api/v1/admin/quotas`):
 - **Autenticação**: Bearer Token de Admin.

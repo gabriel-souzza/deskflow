@@ -13,9 +13,14 @@ def test_documented_business_routes_are_registered():
     expected_routes = {
         ("/api/v1/workspaces", "get"),
         ("/api/v1/workspaces/{id}/availability", "get"),
+        ("/api/v1/bookings", "get"),
+        ("/api/v1/bookings/{id}", "get"),
         ("/api/v1/bookings/{id}", "delete"),
         ("/api/v1/admin/workspaces", "post"),
         ("/api/v1/admin/holidays", "post"),
+        ("/api/v1/admin/cost-centers", "get"),
+        ("/api/v1/admin/cost-centers", "post"),
+        ("/api/v1/admin/accounts", "get"),
         ("/api/v1/waitlist", "post"),
         ("/api/v1/availability/stream", "get"),
     }
@@ -384,3 +389,133 @@ def test_jwt_round_trip():
     assert payload["sub"] == "employee-1"
     assert payload["role"] == "admin"
     assert payload["exp"] > datetime.now(UTC).timestamp()
+
+
+def test_list_and_get_bookings_endpoint(api_client):
+    client, sessions = api_client
+
+    async def seed():
+        async with sessions() as session:
+            center = CostCenterORM(name="List Booking CC", monthly_quota_hours=Decimal(40))
+            session.add(center)
+            await session.flush()
+            emp1 = EmployeeORM(
+                name="Emp One",
+                email="emp1@test.com",
+                cost_center_id=center.id,
+                is_eligible_for_booking=True,
+            )
+            emp2 = EmployeeORM(
+                name="Emp Two",
+                email="emp2@test.com",
+                cost_center_id=center.id,
+                is_eligible_for_booking=True,
+            )
+            ws = WorkspaceORM(code="WS-LIST", floor="1", zone="open", type="estacao", capacity=1)
+            session.add_all([emp1, emp2, ws])
+            await session.commit()
+            return str(center.id), str(emp1.id), str(emp2.id), str(ws.id)
+
+    cc_id, emp1_id, emp2_id, ws_id = asyncio.run(seed())
+    t1 = create_access_token({"sub": emp1_id, "role": "employee", "employee_id": emp1_id})
+    t2 = create_access_token({"sub": emp2_id, "role": "employee", "employee_id": emp2_id})
+    h1 = {"Authorization": f"Bearer {t1}"}
+    h2 = {"Authorization": f"Bearer {t2}"}
+
+    # Emp1 creates a booking
+    slot_start = datetime.combine(date.today() + timedelta(days=2), time(10))
+    res = client.post(
+        "/api/v1/bookings",
+        json={
+            "workspace_id": ws_id,
+            "employee_id": emp1_id,
+            "cost_center_id": cc_id,
+            "slot_start": slot_start.isoformat(),
+            "slot_end": (slot_start + timedelta(minutes=30)).isoformat(),
+        },
+        headers=h1,
+    )
+    assert res.status_code == 201
+    booking_id = res.json()["id"]
+
+    # Emp1 lists own bookings
+    list_res = client.get("/api/v1/bookings", headers=h1)
+    assert list_res.status_code == 200
+    items = list_res.json()["items"]
+    assert any(b["id"] == booking_id for b in items)
+
+    # Emp1 gets single booking
+    get_res = client.get(f"/api/v1/bookings/{booking_id}", headers=h1)
+    assert get_res.status_code == 200
+    assert get_res.json()["id"] == booking_id
+    assert get_res.json()["status"] == "PENDING"
+
+    # Emp2 cannot access Emp1's booking
+    forbidden_res = client.get(f"/api/v1/bookings/{booking_id}", headers=h2)
+    assert forbidden_res.status_code == 403
+
+    # Nonexistent booking 404
+    from uuid import uuid4
+
+    not_found = client.get(f"/api/v1/bookings/{uuid4()}", headers=h1)
+    assert not_found.status_code == 404
+
+
+def test_admin_cost_centers_and_accounts_endpoints(api_client):
+    client, sessions = api_client
+
+    async def seed():
+        from infra.security import hash_password
+
+        async with sessions() as session:
+            admin = EmployeeORM(
+                name="Admin Super",
+                email="admin.super@deskflow.com",
+                password_hash=hash_password("Admin123456!"),
+                role="admin",
+                is_eligible_for_booking=True,
+            )
+            session.add(admin)
+            await session.commit()
+            return str(admin.id)
+
+    admin_id = asyncio.run(seed())
+    admin_token = create_access_token({"sub": admin_id, "role": "admin"})
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    user_token = create_access_token({"sub": "user-1", "role": "employee", "employee_id": "user-1"})
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+
+    # Employee cannot access admin cost-centers or accounts
+    assert client.get("/api/v1/admin/cost-centers", headers=user_headers).status_code == 403
+    assert client.get("/api/v1/admin/accounts", headers=user_headers).status_code == 403
+
+    # Admin creates cost center
+    create_cc = client.post(
+        "/api/v1/admin/cost-centers",
+        json={"name": "Logistics & Supply", "monthly_quota_hours": 120.0},
+        headers=admin_headers,
+    )
+    assert create_cc.status_code == 201
+    cc_data = create_cc.json()
+    assert cc_data["name"] == "Logistics & Supply"
+    assert cc_data["monthly_quota_hours"] == 120.0
+
+    # Duplicate cost center name rejected with 409
+    dup_cc = client.post(
+        "/api/v1/admin/cost-centers",
+        json={"name": "Logistics & Supply", "monthly_quota_hours": 120.0},
+        headers=admin_headers,
+    )
+    assert dup_cc.status_code == 409
+
+    # Admin lists cost centers
+    list_cc = client.get("/api/v1/admin/cost-centers", headers=admin_headers)
+    assert list_cc.status_code == 200
+    names = [c["name"] for c in list_cc.json()["items"]]
+    assert "Logistics & Supply" in names
+
+    # Admin lists accounts
+    list_acc = client.get("/api/v1/admin/accounts", headers=admin_headers)
+    assert list_acc.status_code == 200
+    accounts = list_acc.json()["items"]
+    assert any(acc["email"] == "admin.super@deskflow.com" for acc in accounts)

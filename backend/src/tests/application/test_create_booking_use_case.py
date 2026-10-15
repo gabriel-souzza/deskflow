@@ -211,14 +211,19 @@ async def test_create_booking_rejects_mismatched_cost_center_and_outside_hours()
 
 
 class FakeWindowRepo:
-    def __init__(self, window):
+    def __init__(self, window, fail_on_version: bool = False):
         self.window = window
         self.saved = []
+        self.fail_on_version = fail_on_version
 
     async def get_by_key(self, _workspace_id, _day, _slot_index):
         return self.window
 
-    async def save(self, window):
+    async def save(self, window, expected_version=None):
+        from domain.repositories.availability_window_repository import RepositoryConflictError
+
+        if self.fail_on_version:
+            raise RepositoryConflictError("Optimistic lock conflict on availability window")
         self.saved.append(window)
         return window
 
@@ -255,6 +260,26 @@ async def test_create_booking_handles_window_repo_and_event_bus():
     assert len(window_repo.saved) == 2  # slot is 30 min = 2 windows
     assert window_repo.saved[0].version_id == 2
     assert len(bus.published) == 2  # QuotaConsumed, BookingCreated
+
+
+@pytest.mark.asyncio
+async def test_create_booking_handles_optimistic_lock_conflict():
+    from domain.entities.availability_window import AvailabilityWindow
+    from domain.value_objects.capacity import Capacity
+
+    use_case, command, _booking_repo, _quota_repo, _audit_repo = build_booking_dependencies()
+    window = AvailabilityWindow(
+        workspace_id=command.workspace_id,
+        day=command.slot.start.date().isoformat(),
+        slot_index=4,
+        capacity=Capacity(seats=1),
+        version_id=1,
+    )
+    use_case.window_repo = FakeWindowRepo(window, fail_on_version=True)
+    result = await use_case.execute(command)
+
+    assert result.status_code == 409
+    assert "Optimistic lock conflict" in result.message
 
 
 class QuotaRepoWithLookupError:

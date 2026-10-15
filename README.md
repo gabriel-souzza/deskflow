@@ -205,7 +205,7 @@ npm install
 # Testes
 uv run pytest src/tests/domain -v --cov=src/domain/entities --cov=src/domain/value_objects --cov-fail-under=80
 uv run pytest src/tests/application -v --cov=src/application --cov-fail-under=80
-uv run pytest src/tests/integration/test_postgres_booking.py -v
+uv run pytest src/tests/integration/test_postgres_booking.py -v --cov-fail-under=80
 uv run pytest src/tests -v --cov=src --cov-fail-under=80
 ```
 

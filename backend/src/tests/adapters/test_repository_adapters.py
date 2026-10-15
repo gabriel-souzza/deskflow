@@ -4,6 +4,8 @@ from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
+
 from adapters.repositories.audit_log_repo_postgres import AuditLogRepositoryPostgres
 from adapters.repositories.availability_window_repo_postgres import (
     AvailabilityWindowRepositoryPostgres,
@@ -15,6 +17,7 @@ from adapters.repositories.waitlist_repo_postgres import WaitlistRepositoryPostg
 from adapters.repositories.workspace_repo_postgres import WorkspaceRepositoryPostgres
 from domain.entities.availability_window import AvailabilityWindow
 from domain.entities.booking import Booking, BookingStatus
+from domain.repositories.availability_window_repository import RepositoryConflictError
 from domain.value_objects.capacity import Capacity
 from domain.value_objects.time_slot import TimeSlot
 from infra.models import CostCenterORM, EmployeeORM, WorkspaceORM
@@ -81,10 +84,21 @@ def test_postgres_repositories_share_transaction_and_map_entities(api_client):
                     capacity=Capacity(seats=1),
                 )
                 await window_repo.save(window)
-                assert await window_repo.get_by_key(workspace_id, window.day, 4) == window
                 updated_window = replace(window, version_id=2, capacity=Capacity(seats=2))
                 await window_repo.save(updated_window)
                 assert await window_repo.get_by_key(workspace_id, window.day, 4) == updated_window
+
+                # Optimistic lock check (Invariant I6)
+                with pytest.raises(RepositoryConflictError):
+                    await window_repo.save(
+                        replace(updated_window, version_id=3), expected_version=999
+                    )
+                await window_repo.save(
+                    replace(updated_window, version_id=3), expected_version=2
+                )
+                assert (
+                    await window_repo.get_by_key(workspace_id, window.day, 4)
+                ).version_id == 3
 
                 booking = Booking(
                     workspace_id=workspace_id,

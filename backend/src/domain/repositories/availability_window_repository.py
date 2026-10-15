@@ -4,6 +4,10 @@ from uuid import UUID
 from domain.entities.availability_window import AvailabilityWindow
 
 
+class RepositoryConflictError(Exception):
+    """Raised when an optimistic lock conflict occurs."""
+
+
 class AvailabilityWindowRepository(ABC):
     @abstractmethod
     async def get_by_key(
@@ -16,8 +20,12 @@ class AvailabilityWindowRepository(ABC):
         ...
 
     @abstractmethod
-    async def save(self, window: AvailabilityWindow) -> AvailabilityWindow:
-        """Persist an availability window (insert or update)."""
+    async def save(
+        self,
+        window: AvailabilityWindow,
+        expected_version: int | None = None,
+    ) -> AvailabilityWindow:
+        """Persist an availability window (insert or update with optional optimistic lock)."""
         ...
 
     @abstractmethod

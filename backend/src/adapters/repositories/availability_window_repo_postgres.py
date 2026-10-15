@@ -1,11 +1,14 @@
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.entities.availability_window import AvailabilityWindow
 from domain.entities.booking import BookingStatus
-from domain.repositories.availability_window_repository import AvailabilityWindowRepository
+from domain.repositories.availability_window_repository import (
+    AvailabilityWindowRepository,
+    RepositoryConflictError,
+)
 from domain.value_objects.capacity import Capacity
 from infra.models import AvailabilityWindowORM, BookingORM, BookingWindowORM
 
@@ -35,7 +38,31 @@ class AvailabilityWindowRepositoryPostgres(AvailabilityWindowRepository):
             version_id=row.version_id,
         )
 
-    async def save(self, window: AvailabilityWindow) -> AvailabilityWindow:
+    async def save(
+        self,
+        window: AvailabilityWindow,
+        expected_version: int | None = None,
+    ) -> AvailabilityWindow:
+        if expected_version is not None:
+            stmt = (
+                update(AvailabilityWindowORM)
+                .where(
+                    AvailabilityWindowORM.workspace_id == window.workspace_id,
+                    AvailabilityWindowORM.day == window.day,
+                    AvailabilityWindowORM.slot_index == window.slot_index,
+                    AvailabilityWindowORM.version_id == expected_version,
+                )
+                .values(seats=window.capacity.seats, version_id=window.version_id)
+            )
+            result = await self.session.execute(stmt)
+            if result.rowcount == 0:
+                raise RepositoryConflictError(
+                    f"Optimistic lock conflict for window {window.workspace_id} "
+                    f"on {window.day} slot {window.slot_index}"
+                )
+            await self.session.flush()
+            return window
+
         orm = await self.session.get(
             AvailabilityWindowORM,
             (window.workspace_id, window.day, window.slot_index),

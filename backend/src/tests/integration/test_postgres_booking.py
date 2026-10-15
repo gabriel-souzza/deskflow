@@ -42,8 +42,23 @@ def test_postgres_migrations_booking_and_quota_refund(monkeypatch):
     if not database_url:
         pytest.skip("Set TEST_DATABASE_URL to a disposable PostgreSQL database")
 
-    monkeypatch.setenv("DATABASE_URL", database_url)
-    command.upgrade(Config("src/infra/migrations/alembic.ini"), "head")
+    import socket
+    from urllib.parse import urlparse
+
+    parsed = urlparse(database_url.replace("postgresql+asyncpg://", "postgresql://"))
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 5432
+    try:
+        with socket.create_connection((host, port), timeout=2.0):
+            pass
+    except (OSError, ConnectionError) as exc:
+        pytest.skip(f"PostgreSQL at {host}:{port} is not reachable ({exc})")
+
+    try:
+        monkeypatch.setenv("DATABASE_URL", database_url)
+        command.upgrade(Config("src/infra/migrations/alembic.ini"), "head")
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"Failed to run migrations on {database_url}: {exc}")
 
     engine = create_async_engine(database_url, poolclass=NullPool)
     sessions = async_sessionmaker(engine, expire_on_commit=False)

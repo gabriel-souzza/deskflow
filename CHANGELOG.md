@@ -3,6 +3,12 @@
 Todas as mudanças notáveis neste projeto são documentadas aqui.
 
 ### Adicionado
+- Implementação estrita da Invariante I6 (Lock Otimista): classe `RepositoryConflictError`, verificação atômica de versão em `AvailabilityWindowRepositoryPostgres.save(expected_version=...)` e tratamento com retorno 409 em `CreateBookingUseCase`
+- Endpoints `GET /api/v1/bookings` e `GET /api/v1/bookings/{id}` permitindo ao colaborador consultar suas reservas ativas e históricas com validação de posse
+- Endpoints administrativos `GET /api/v1/admin/cost-centers` e `POST /api/v1/admin/cost-centers` para gestão de centros de custo com provisionamento de cota mensal
+- Endpoint administrativo `GET /api/v1/admin/accounts` para listagem de contas de colaboradores
+- Inclusão dos testes de integração com PostgreSQL real (`src/tests/integration`) no pipeline do GitHub Actions (`ci.yml`)
+- Checagem preventiva de conectividade via socket em `test_postgres_booking.py` para skip gracioso quando o serviço de banco não estiver acessível
 - Coluna `role` persistida na tabela `employees` com migração Alembic `003_add_employee_role.py`, mapeada na entidade de domínio `Employee` e no schema `AccountCreate`
 - Testes automatizados validando atribuição de papel `admin` e rejeição de rotas administrativas para papéis `employee`
 - Suíte completa de testes unitários isolados (TDD puro) para todos os 14 Casos de Uso da Clean Architecture em `src/tests/application/`

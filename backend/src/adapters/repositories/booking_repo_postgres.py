@@ -137,3 +137,15 @@ class BookingRepositoryPostgres(BookingRepository):
             .order_by(BookingORM.slot_start, BookingORM.id)
         )
         return [self._to_entity(row) for row in result.scalars().all()]
+
+    async def list_by_employee(
+        self,
+        employee_id: UUID,
+        status: str | None = None,
+    ) -> list[Booking]:
+        stmt = select(BookingORM).where(BookingORM.employee_id == employee_id)
+        if status:
+            stmt = stmt.where(BookingORM.status == status.upper())
+        stmt = stmt.order_by(BookingORM.slot_start.desc())
+        result = await self.session.execute(stmt)
+        return [self._to_entity(row) for row in result.scalars().all()]

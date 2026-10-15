@@ -152,3 +152,75 @@ async def cancel_booking(
     ).execute(cancelled.workspace_id, cancelled.slot)
     await sse_publisher.publish({"type": "booking.cancelled", "booking_id": str(id)})
     return {"id": str(id), "status": cancelled.status.value}
+
+
+@router.get("")
+async def list_bookings(
+    current_user: Annotated[dict, Depends(require_auth)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    employee_id: UUID | None = Query(default=None),
+    status: str | None = Query(default=None),
+):
+    """GET /api/v1/bookings — Listar reservas do colaborador ou geral para admin."""
+    target_id = employee_id
+    if target_id is None:
+        user_emp = current_user.get("employee_id")
+        if user_emp:
+            try:
+                target_id = UUID(user_emp)
+            except ValueError:
+                target_id = None
+
+    if target_id is None and current_user.get("role") != "admin":
+        raise HTTPException(status_code=400, detail="employee_id is required")
+
+    repo = BookingRepositoryPostgres(db)
+    if target_id is not None:
+        require_booking_owner(current_user, target_id)
+        bookings = await repo.list_by_employee(target_id, status=status)
+    else:
+        now = datetime.now(UTC)
+        bookings = await repo.list_between(now - timedelta(days=365), now + timedelta(days=365))
+        if status:
+            bookings = [b for b in bookings if b.status.value.upper() == status.upper()]
+
+    return {
+        "items": [
+            {
+                "id": str(b.id),
+                "workspace_id": str(b.workspace_id),
+                "employee_id": str(b.employee_id),
+                "cost_center_id": str(b.cost_center_id),
+                "slot_start": b.slot.start.isoformat(),
+                "slot_end": b.slot.end.isoformat(),
+                "status": b.status.value,
+                "created_at": b.created_at.isoformat(),
+            }
+            for b in bookings
+        ]
+    }
+
+
+@router.get("/{id}")
+async def get_booking(
+    id: UUID,
+    current_user: Annotated[dict, Depends(require_auth)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """GET /api/v1/bookings/{id} — Obter detalhes de uma reserva específica."""
+    repo = BookingRepositoryPostgres(db)
+    booking = await repo.get_by_id(id)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    require_booking_owner(current_user, booking.employee_id)
+    return {
+        "id": str(booking.id),
+        "workspace_id": str(booking.workspace_id),
+        "employee_id": str(booking.employee_id),
+        "cost_center_id": str(booking.cost_center_id),
+        "slot_start": booking.slot.start.isoformat(),
+        "slot_end": booking.slot.end.isoformat(),
+        "status": booking.status.value,
+        "created_at": booking.created_at.isoformat(),
+    }

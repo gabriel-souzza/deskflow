@@ -54,3 +54,12 @@ class BookingRepository(ABC):
     async def list_between(self, start: datetime, end: datetime) -> list[Booking]:
         """List bookings overlapping a half-open date range."""
         ...
+
+    @abstractmethod
+    async def list_by_employee(
+        self,
+        employee_id: UUID,
+        status: str | None = None,
+    ) -> list[Booking]:
+        """List bookings for an employee, optionally filtered by status."""
+        ...
