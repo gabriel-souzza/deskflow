@@ -32,7 +32,7 @@ from application.use_cases.expire_waitlist import ExpireWaitlistUseCase
 from application.use_cases.generate_daily_availability import GenerateDailyAvailabilityUseCase
 from application.use_cases.notify_waitlist import NotifyWaitlistUseCase
 from application.use_cases.release_expired import ReleaseExpiredBookingsUseCase
-from domain.events.events import QuotaConsumed
+from domain.events.events import BookingCancelled, BookingExpired, QuotaConsumed
 from infra.database import SessionLocal, get_db
 from infra.models import EmployeeORM
 from infra.security import create_access_token, verify_password
