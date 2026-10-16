@@ -224,20 +224,3 @@ docker compose logs -f api
 O pgAdmin fica em `http://localhost:5050`. Use o email e a senha configurados em `PGADMIN_DEFAULT_EMAIL` e `PGADMIN_DEFAULT_PASSWORD`; para registrar o servidor, use host `db`, porta `5432`, database `deskflow`, usuário `postgres` e a senha configurada em `POSTGRES_PASSWORD`. O Compose falha se as configurações obrigatórias estiverem ausentes.
 
 Para rodar o teste PostgreSQL real, use um banco descartável acessível pelo host, configure `TEST_DATABASE_URL` em `.env` (host `localhost`) e execute `uv run --env-file .env pytest src/tests/integration/test_postgres_booking.py -v`. O teste aplica as migrations Alembic até `head` antes de exercitar reserva, cancelamento e reembolso.
-
-## Status do Backend (Atualizado)
-
-O backend possui domínio separado e uma API operacional, mas ainda não está integralmente alinhado à arquitetura descrita em `documento-software.md`:
-
-- **Domínio (`src/domain/`)**: 8 entidades + 2 VO + 6 repos ABC
-- **Application**: criação/cancelamento de reserva e expiração são orquestrados por use cases com Unit of Work; outros use cases ainda são stubs
-- **Adapters**: 5 controllers e 6 repositórios PostgreSQL; reservas/cancelamentos usam interfaces e repositories, enquanto outras rotas ainda acessam SQLAlchemy diretamente
-- **Infra**: `database.py`, `security.py`, `qr_generator.py`, `migrations/`
-- **DevOps**: `uv`, Docker, docker-compose
-- **Testes**: gate de 80% nos módulos implementados; use cases stub são explicitamente omitidos, e o teste PostgreSQL real requer `TEST_DATABASE_URL`
-
-Os use cases que permanecem incompletos e o teste PostgreSQL não executado neste ambiente ainda impedem afirmar Clean Architecture/TDD completos para todo o escopo.
-
-## Licença
-
-Proprietário — confidencial.
