@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
-    command: [ "sh", "-c", "alembic -c src/infra/migrations/alembic.ini upgrade head && python -m uvicorn main:app --host 0.0.0.0 --port 8000" ]
+    command: [ "sh", "-c", "alembic -c src/infra/migrations/alembic.ini upgrade head && python -m infra.seed && python -m uvicorn main:app --host 0.0.0.0 --port 8000" ]
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in backend/.env}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in backend/.env}
