@@ -181,14 +181,10 @@ Crie `backend/.env` a partir de `.env.example` e substitua todos os valores `rep
 DATABASE_URL=postgresql+asyncpg://postgres:replace-me@db:5432/deskflow
 POSTGRES_PASSWORD=replace-me
 JWT_SECRET=replace-with-a-random-secret-of-at-least-32-bytes
-DEMO_ADMIN_USERNAME=
-DEMO_ADMIN_PASSWORD=
+ATTENDANCE_INTEGRATION_TOKEN=attendance-secret-token
+PGADMIN_DEFAULT_EMAIL=replace-me
 PGADMIN_DEFAULT_PASSWORD=replace-me
 TEST_DATABASE_URL=
-SSE_HEARTBEAT_INTERVAL=30
-CHECKIN_TOLERANCE_MINUTES=10
-CANCELLATION_MINIMUM_HOURS=2
-SLOT_DURATION_MINUTES=15
 ```
 
 ## Instalação (uv - gerenciador de pacotes moderno)
