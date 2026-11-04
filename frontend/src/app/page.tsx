@@ -22,7 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Workspace, WorkspaceType } from "@/domain/entities/workspace";
+import { Workspace } from "@/domain/entities/workspace";
 import { useCurrentUser } from "@/features/auth/hooks/use-auth";
 import { useCreateBooking } from "@/features/bookings/hooks/use-bookings";
 import { useJoinWaitlist } from "@/features/waitlist/hooks/use-waitlist";

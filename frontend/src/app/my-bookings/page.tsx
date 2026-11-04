@@ -218,7 +218,6 @@ export default function MyBookingsPage() {
           <div className="flex flex-col items-center justify-center py-4 space-y-4">
             {selectedBookingForQr && (
               <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-xs">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={`${API_BASE_URL}/api/v1/bookings/${selectedBookingForQr.id}/qr?token=${getToken()}`}
                   alt="QR Code de Check-in"

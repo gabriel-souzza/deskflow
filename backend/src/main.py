@@ -39,7 +39,7 @@ from application.use_cases.notify_waitlist import NotifyWaitlistUseCase
 from application.use_cases.release_expired import ReleaseExpiredBookingsUseCase
 from domain.events.events import QuotaConsumed
 from infra.database import SessionLocal, get_db
-from infra.models import EmployeeORM
+from infra.models import CostCenterORM, EmployeeORM
 from infra.security import create_access_token, verify_password
 from infra.unit_of_work import SqlAlchemyUnitOfWork
 
@@ -219,15 +219,22 @@ async def get_me(
         emp_uuid = UUID(emp_id)
     except ValueError:
         return {"sub": current_user.get("sub"), "role": current_user.get("role")}
-    employee = await db.scalar(select(EmployeeORM).where(EmployeeORM.id == emp_uuid))
-    if employee is None:
+    result = await db.execute(
+        select(EmployeeORM, CostCenterORM)
+        .outerjoin(CostCenterORM, CostCenterORM.id == EmployeeORM.cost_center_id)
+        .where(EmployeeORM.id == emp_uuid)
+    )
+    row = result.first()
+    if row is None:
         raise HTTPException(status_code=404, detail="Employee not found")
+    employee, cost_center = row
     return {
         "id": str(employee.id),
         "name": employee.name,
         "email": employee.email,
         "role": employee.role,
         "cost_center_id": str(employee.cost_center_id) if employee.cost_center_id else None,
+        "cost_center_name": cost_center.name if cost_center else None,
         "is_eligible_for_booking": employee.is_eligible_for_booking,
     }
 
