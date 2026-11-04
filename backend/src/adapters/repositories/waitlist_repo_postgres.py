@@ -11,6 +11,14 @@ from domain.value_objects.time_slot import TimeSlot
 from infra.models import WaitlistORM
 
 
+def _naive_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
+
+
 class WaitlistRepositoryPostgres(WaitlistRepository):
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -35,8 +43,8 @@ class WaitlistRepositoryPostgres(WaitlistRepository):
         orm = WaitlistORM(
             workspace_id=workspace_id,
             employee_id=employee_id,
-            desired_start=desired_slot.start,
-            desired_end=desired_slot.end,
+            desired_start=_naive_utc(desired_slot.start),
+            desired_end=_naive_utc(desired_slot.end),
         )
         self.session.add(orm)
         await self.session.flush()
@@ -46,7 +54,7 @@ class WaitlistRepositoryPostgres(WaitlistRepository):
         row = await self.session.get(WaitlistORM, entry.id)
         if row is None:
             raise LookupError("Waitlist entry not found")
-        row.notified_at = entry.notified_at
+        row.notified_at = _naive_utc(entry.notified_at)
         await self.session.flush()
         return entry
 

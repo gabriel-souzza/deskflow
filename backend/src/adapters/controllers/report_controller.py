@@ -34,6 +34,7 @@ async def utilization(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {
         **report["summary"],
+        "summary": report["summary"],
         "by_floor": report["by_floor"],
         "by_zone": report["by_zone"],
         "cost_center_hours": {k: float(v) for k, v in report["cost_center_hours"].items()},

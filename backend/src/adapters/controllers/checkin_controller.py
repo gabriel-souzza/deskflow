@@ -37,7 +37,7 @@ async def checkin(
     qr_token: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    """POST /api/v1/bookings/{id}/checkin — Confirmação via QR (UC06, I4)."""
+    """POST /api/v1/bookings/{id}/checkin — Confirmação via QR."""
     token = (payload.qr_token if payload and payload.qr_token else None) or qr_token
     if not token:
         raise HTTPException(status_code=400, detail="qr_token is required")
@@ -71,7 +71,7 @@ async def get_booking_qr_code(
     current_user: Annotated[dict, Depends(require_auth)],
     db: AsyncSession = Depends(get_db),
 ):
-    """GET /api/v1/bookings/{id}/qr — Gera imagem PNG do QR Code (UC06, RF02)."""
+    """GET /api/v1/bookings/{id}/qr — Gera imagem PNG do QR Code."""
     booking = await BookingRepositoryPostgres(db).get_by_id(id)
     if booking is None:
         raise HTTPException(status_code=404, detail="Booking not found")
@@ -89,4 +89,30 @@ async def get_booking_qr_code(
         expires_delta=token_expiry,
     )
     png_bytes = generate_qr_png_bytes(token)
-    return Response(content=png_bytes, media_type="image/png")
+    return Response(content=png_bytes, media_type="image/png", headers={"X-Checkin-Token": token})
+
+
+@router.get("/{id}/checkin-token")
+async def get_booking_checkin_token(
+    id: UUID,
+    current_user: Annotated[dict, Depends(require_auth)],
+    db: AsyncSession = Depends(get_db),
+):
+    """GET /api/v1/bookings/{id}/checkin-token — Obter token JWT de check-in."""
+    booking = await BookingRepositoryPostgres(db).get_by_id(id)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    require_booking_owner(current_user, booking.employee_id)
+    if booking.status != BookingStatus.PENDING:
+        raise HTTPException(status_code=400, detail="Check-in token is only available for pending bookings")
+
+    now = datetime.now(UTC)
+    start = booking.slot.start
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=UTC)
+    token_expiry = max(timedelta(minutes=10), start - now + timedelta(minutes=15))
+    token = create_access_token(
+        {"sub": str(id), "purpose": "booking-checkin"},
+        expires_delta=token_expiry,
+    )
+    return {"booking_id": str(id), "qr_token": token}

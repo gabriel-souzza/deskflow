@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   CalendarDays,
+  Check,
   CheckCircle2,
   Clock,
+  Copy,
   QrCode,
   XCircle,
 } from "lucide-react";
@@ -27,7 +29,7 @@ import {
   useCheckIn,
   useMyBookings,
 } from "@/features/bookings/hooks/use-bookings";
-import { API_BASE_URL, getToken } from "@/lib/api-client";
+import { API_BASE_URL, apiClient, getToken } from "@/lib/api-client";
 
 export default function MyBookingsPage() {
   const { data: bookings, isLoading } = useMyBookings();
@@ -35,8 +37,34 @@ export default function MyBookingsPage() {
   const checkinMutation = useCheckIn();
 
   const [selectedBookingForQr, setSelectedBookingForQr] = useState<Booking | null>(null);
+  const [mounted, setMounted] = useState(false);
   const [qrTokenInput, setQrTokenInput] = useState("");
+  const [rawToken, setRawToken] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+  const [imgLoadError, setImgLoadError] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedBookingForQr) {
+      setRawToken(null);
+      setQrTokenInput("");
+      setImgLoadError(false);
+      return;
+    }
+    setImgLoadError(false);
+    apiClient<{ qr_token: string }>(`/api/v1/bookings/${selectedBookingForQr.id}/checkin-token`)
+      .then((res) => {
+        setRawToken(res.qr_token);
+        setQrTokenInput(res.qr_token);
+      })
+      .catch(() => {
+        setRawToken(null);
+      });
+  }, [selectedBookingForQr]);
 
   const handleCancel = async (booking: Booking) => {
     setFeedback(null);
@@ -117,7 +145,7 @@ export default function MyBookingsPage() {
       )}
 
       <div className="mt-6 space-y-4">
-        {isLoading ? (
+        {isLoading || !mounted ? (
           <div className="space-y-3">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="h-28 animate-pulse rounded-lg bg-slate-200" />
@@ -125,18 +153,19 @@ export default function MyBookingsPage() {
           </div>
         ) : bookings?.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 p-12 text-center">
-            <Clock className="mx-auto h-10 w-10 text-slate-400" />
-            <h3 className="mt-2 text-sm font-semibold text-slate-900">Nenhuma reserva encontrada</h3>
+            <CalendarDays className="mx-auto h-10 w-10 text-slate-400" />
+            <h3 className="mt-2 text-sm font-semibold text-slate-900">
+              Nenhuma reserva encontrada
+            </h3>
             <p className="mt-1 text-xs text-slate-500">
-              Você ainda não possui reservas cadastradas. Acesse a aba Espaços para agendar.
+              Reserve um posto ou sala para visualizar seus agendamentos aqui.
             </p>
           </div>
         ) : (
           bookings?.map((booking) => {
-            const isPending = booking.isPending();
-            const isConfirmed = booking.isConfirmed();
-            const canCancelNow =
-              booking.slot.start.getTime() - new Date().getTime() >= 2 * 60 * 60 * 1000;
+            const isPending = booking.status === BookingStatus.PENDING;
+            const isConfirmed = booking.status === BookingStatus.CONFIRMED;
+            const canCancelNow = (booking.slot.start.getTime() - Date.now()) >= 2 * 60 * 60 * 1000;
 
             return (
               <Card key={booking.id} className="shadow-xs hover:border-slate-300 transition-all">
@@ -144,7 +173,7 @@ export default function MyBookingsPage() {
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div>
                       <CardTitle className="text-base text-slate-900">
-                        {formatSlotDate(booking.slot.start)} &bull; {formatSlotTime(booking.slot.start)} até {formatSlotTime(booking.slot.end)}
+                        {formatSlotDate(booking.slot.start)} &bull; {formatSlotTime(booking.slot.start)} às {formatSlotTime(booking.slot.end)}
                       </CardTitle>
                       <CardDescription className="text-xs mt-0.5">
                         Duração: {booking.slot.durationHours}h &bull; ID: {booking.id.slice(0, 8)}...
@@ -215,26 +244,65 @@ export default function MyBookingsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col items-center justify-center py-4 space-y-4">
+          <div className="flex flex-col items-center justify-center py-3 space-y-4">
             {selectedBookingForQr && (
-              <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-xs">
-                <img
-                  src={`${API_BASE_URL}/api/v1/bookings/${selectedBookingForQr.id}/qr?token=${getToken()}`}
-                  alt="QR Code de Check-in"
-                  className="h-48 w-48 object-contain"
-                />
+              <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col items-center justify-center">
+                {!imgLoadError ? (
+                  <img
+                    src={`${API_BASE_URL}/api/v1/bookings/${selectedBookingForQr.id}/qr?token=${getToken()}`}
+                    alt="QR Code de Check-in"
+                    className="h-48 w-48 object-contain"
+                    onError={() => setImgLoadError(true)}
+                  />
+                ) : (
+                  <div className="h-48 w-48 flex flex-col items-center justify-center p-3 text-center bg-slate-50 rounded-lg text-xs text-slate-500">
+                    <QrCode className="h-10 w-10 text-slate-400 mb-2" />
+                    <span>Use o token digital abaixo para confirmar o check-in</span>
+                  </div>
+                )}
+                <span className="text-[11px] text-slate-400 mt-2 font-mono">
+                  ID: {selectedBookingForQr.id.slice(0, 13)}...
+                </span>
               </div>
             )}
 
             <div className="w-full space-y-2">
-              <label className="text-xs font-semibold text-slate-700 block">
-                Ou digite o token de confirmação:
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700 block">
+                  Token de confirmação de check-in:
+                </label>
+                {rawToken && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs text-blue-600 hover:text-blue-700 px-1.5"
+                    onClick={() => {
+                      navigator.clipboard.writeText(rawToken);
+                      setIsCopied(true);
+                      setTimeout(() => setIsCopied(false), 2000);
+                    }}
+                  >
+                    {isCopied ? (
+                      <>
+                        <Check className="h-3 w-3 mr-1 text-emerald-600" />
+                        Copiado!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3 mr-1" />
+                        Copiar Token
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
               <div className="flex gap-2">
                 <Input
                   placeholder="Cole aqui o token JWT de check-in"
                   value={qrTokenInput}
                   onChange={(e) => setQrTokenInput(e.target.value)}
+                  className="font-mono text-xs"
                 />
                 <Button
                   onClick={() =>
@@ -262,4 +330,3 @@ export default function MyBookingsPage() {
     </div>
   );
 }
-

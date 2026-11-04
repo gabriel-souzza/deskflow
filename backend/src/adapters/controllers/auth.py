@@ -9,12 +9,14 @@ security = HTTPBearer(auto_error=False)
 
 
 async def require_auth(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    token: str | None = None,
 ) -> dict:
-    if credentials is None:
+    raw_token = credentials.credentials if credentials else token
+    if not raw_token:
         raise HTTPException(status_code=401, detail="Authentication required")
     try:
-        return verify_token(credentials.credentials)
+        return verify_token(raw_token)
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
 

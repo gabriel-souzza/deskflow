@@ -59,11 +59,23 @@ async def join_waitlist(
     try:
         entry = await use_case.execute(payload.workspace_id, employee_uuid, slot)
     except ValueError as exc:
-        message = str(exc)
-        status_code = 404 if message.endswith("not found") else 409
-        if "not eligible" in message:
+        raw_msg = str(exc)
+        status_code = 404 if raw_msg.endswith("not found") else 409
+        if "not eligible" in raw_msg:
             status_code = 403
-        raise HTTPException(status_code=status_code, detail=message) from exc
+            user_msg = "Colaborador não elegível para reservas ou lista de espera devido às regras de presença presencial."
+        elif "still has capacity" in raw_msg:
+            user_msg = "O espaço ainda possui vagas disponíveis para este horário. Faça a reserva direta sem precisar de fila de espera!"
+        elif "already has a waitlist entry" in raw_msg:
+            user_msg = "Você já possui uma entrada na fila de espera para este espaço."
+        elif "Workspace not found" in raw_msg:
+            user_msg = "Espaço de trabalho não encontrado."
+        elif "Employee not found" in raw_msg:
+            user_msg = "Colaborador não encontrado."
+        else:
+            user_msg = raw_msg
+        raise HTTPException(status_code=status_code, detail=user_msg) from exc
+
     await sse_publisher.publish(
         {
             "type": "waitlist.joined",
@@ -76,6 +88,8 @@ async def join_waitlist(
         "workspace_id": str(entry.workspace_id),
         "slot_start": entry.desired_slot_start.isoformat(),
         "slot_end": entry.desired_slot_end.isoformat(),
+        "desired_start": entry.desired_slot_start.isoformat(),
+        "desired_end": entry.desired_slot_end.isoformat(),
         "created_at": entry.created_at.isoformat(),
     }
 
@@ -85,7 +99,7 @@ async def list_waitlist(
     current_user: Annotated[dict, Depends(require_auth)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """GET /api/v1/waitlist — Listar posições na fila de espera (UC05)."""
+    """GET /api/v1/waitlist — Listar posições na fila de espera."""
     emp_id = current_user.get("employee_id")
     if not emp_id and current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Employee account required")
@@ -102,6 +116,8 @@ async def list_waitlist(
                 "id": str(e.id),
                 "workspace_id": str(e.workspace_id),
                 "employee_id": str(e.employee_id),
+                "slot_start": e.desired_start.isoformat() if e.desired_start else None,
+                "slot_end": e.desired_end.isoformat() if e.desired_end else None,
                 "desired_start": e.desired_start.isoformat() if e.desired_start else None,
                 "desired_end": e.desired_end.isoformat() if e.desired_end else None,
                 "created_at": e.created_at.isoformat() if e.created_at else None,
@@ -118,7 +134,7 @@ async def leave_waitlist(
     current_user: Annotated[dict, Depends(require_auth)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """DELETE /api/v1/waitlist/{id} — Cancelar entrada na fila de espera (UC05)."""
+    """DELETE /api/v1/waitlist/{id} — Cancelar entrada na fila de espera."""
     entry = await db.get(WaitlistORM, id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Waitlist entry not found")

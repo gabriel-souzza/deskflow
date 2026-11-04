@@ -15,8 +15,10 @@ interface WaitlistApiItem {
   id: string;
   workspace_id: string;
   employee_id: string;
-  slot_start: string;
-  slot_end: string;
+  slot_start?: string;
+  slot_end?: string;
+  desired_start?: string;
+  desired_end?: string;
   created_at: string;
   notified_at?: string | null;
 }
@@ -26,16 +28,18 @@ export function useMyWaitlist() {
     queryKey: ["waitlist", "my"],
     queryFn: async () => {
       const data = await apiClient<{ items: WaitlistApiItem[] }>("/api/v1/waitlist");
-      return data.items.map((item) =>
-        WaitlistEntry.create({
+      return data.items.map((item) => {
+        const start = item.slot_start || item.desired_start || "";
+        const end = item.slot_end || item.desired_end || "";
+        return WaitlistEntry.create({
           id: item.id,
           workspaceId: item.workspace_id,
           employeeId: item.employee_id,
-          desiredSlot: TimeSlot.create(item.slot_start, item.slot_end),
+          desiredSlot: TimeSlot.create(start, end),
           createdAt: new Date(item.created_at),
           notifiedAt: item.notified_at ? new Date(item.notified_at) : null,
-        })
-      );
+        });
+      });
     },
     refetchInterval: 1000 * 10,
   });
@@ -72,4 +76,3 @@ export function useCancelWaitlist() {
     },
   });
 }
-

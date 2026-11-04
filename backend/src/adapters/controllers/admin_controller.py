@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +20,15 @@ from application.use_cases.set_quota import SetQuotaUseCase
 from domain.entities.holiday import Holiday
 from domain.entities.quota_period import QuotaExceededError
 from infra.database import get_db
-from infra.models import CostCenterORM, EmployeeORM, HolidayORM, QuotaPeriodORM
+from infra.models import (
+    BookingORM,
+    BookingWindowORM,
+    CostCenterORM,
+    EmployeeORM,
+    HolidayORM,
+    QuotaPeriodORM,
+    WaitlistORM,
+)
 from infra.security import hash_password
 from infra.unit_of_work import SqlAlchemyUnitOfWork
 
@@ -384,6 +392,39 @@ async def update_account(
         "role": employee.role,
         "is_eligible_for_booking": employee.is_eligible_for_booking,
     }
+
+
+@router.delete("/accounts/{id}", status_code=200)
+async def delete_account(
+    id: UUID,
+    _user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """DELETE /api/v1/admin/accounts/{id} — Excluir colaborador."""
+    current_user_id = _user.get("employee_id") or _user.get("sub")
+    if current_user_id and str(id) == str(current_user_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Não é permitido excluir sua própria conta de administrador",
+        )
+
+    employee = await db.get(EmployeeORM, id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    # Limpar entradas de fila de espera do colaborador
+    await db.execute(delete(WaitlistORM).where(WaitlistORM.employee_id == id))
+
+    # Limpar reservas e janelas vinculadas
+    booking_ids_result = await db.execute(select(BookingORM.id).where(BookingORM.employee_id == id))
+    booking_ids = booking_ids_result.scalars().all()
+    if booking_ids:
+        await db.execute(delete(BookingWindowORM).where(BookingWindowORM.booking_id.in_(booking_ids)))
+        await db.execute(delete(BookingORM).where(BookingORM.id.in_(booking_ids)))
+
+    await db.delete(employee)
+    await db.commit()
+    return {"id": str(id), "deleted": True}
 
 
 class CostCenterUpdate(BaseModel):

@@ -1,34 +1,97 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  AlertCircle,
   BarChart3,
   Calendar,
   Clock,
   FileSpreadsheet,
   FileText,
   Layers,
+  Lock,
   PieChart,
+  RefreshCw,
   TrendingUp,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCurrentUser } from "@/features/auth/hooks/use-auth";
 import {
+  DimensionOccupancy,
   downloadReport,
   useUtilizationReport,
 } from "@/features/reports/hooks/use-reports";
 
 export default function ReportsPage() {
+  const { data: user, isLoading: userLoading } = useCurrentUser();
+  const [mounted, setMounted] = useState(false);
   const [selectedDay, setSelectedDay] = useState(() => {
     return new Date().toISOString().split("T")[0]!;
   });
 
-  const { data: report, isLoading } = useUtilizationReport(selectedDay);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const {
+    data: report,
+    isLoading: reportLoading,
+    error,
+    refetch,
+  } = useUtilizationReport(selectedDay);
 
   const handleExport = (format: "csv" | "pdf") => {
     downloadReport(selectedDay, selectedDay, format);
   };
+
+  const parseOccupancyHours = (
+    value: number | DimensionOccupancy | undefined
+  ): string => {
+    if (typeof value === "number") {
+      return `${value % 1 === 0 ? value : value.toFixed(1)}h`;
+    }
+    if (value && typeof value === "object" && typeof value.occupied_slot_seats === "number") {
+      const hours = value.occupied_slot_seats / 4;
+      return `${hours % 1 === 0 ? hours : hours.toFixed(1)}h`;
+    }
+    return "0h";
+  };
+
+  if (!mounted || userLoading) {
+    return (
+      <div className="mx-auto max-w-7xl p-8">
+        <div className="h-10 w-48 animate-pulse rounded bg-slate-200" />
+      </div>
+    );
+  }
+
+  if (!user?.isAdmin()) {
+    return (
+      <div className="mx-auto max-w-md py-20 text-center">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-50 text-amber-600 mb-4">
+          <Lock className="h-7 w-7" />
+        </div>
+        <h2 className="text-lg font-bold text-slate-900">Acesso Restrito ao Administrador</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          O Dashboard de Utilização e Rateio é exclusivo para usuários com perfil de Administrador.
+        </p>
+      </div>
+    );
+  }
+
+  const summary = report?.summary ?? report;
+  const utilizationRate = summary?.utilization_rate ?? summary?.occupancy_rate ?? 0;
+  const noShowRate = summary?.no_show_rate ?? 0;
+  const confirmedCount = summary?.bookings_confirmed ?? 0;
+  const expiredCount = summary?.bookings_expired ?? 0;
+  const totalStations = summary?.total_stations ?? 0;
+  const totalMeetingRooms = summary?.total_meeting_rooms ?? 0;
+
+  const byFloorEntries = Object.entries(report?.by_floor ?? {});
+  const byZoneEntries = Object.entries(report?.by_zone ?? {});
+  const costCenterEntries = Object.entries(report?.cost_center_hours ?? {});
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -39,7 +102,7 @@ export default function ReportsPage() {
             Dashboard de Utilização e Rateio
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Métricas de ocupação, ociosidade, taxas de no-show e rateio de custos por departamento (RF07–RF10).
+            Métricas de ocupação, ociosidade, taxas de no-show e rateio de custos por departamento.
           </p>
         </div>
 
@@ -50,7 +113,7 @@ export default function ReportsPage() {
               type="date"
               value={selectedDay}
               onChange={(e) => setSelectedDay(e.target.value)}
-              className="text-sm outline-none"
+              className="text-sm outline-none bg-transparent"
             />
           </div>
 
@@ -76,7 +139,27 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {isLoading ? (
+      {error ? (
+        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-red-600" />
+            <p className="text-sm text-red-700">
+              Não foi possível carregar os dados do relatório para a data selecionada.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => refetch()}
+              className="ml-auto gap-1 text-xs"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Tentar novamente
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {reportLoading ? (
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[...Array(4)].map((_, i) => (
             <div key={i} className="h-28 animate-pulse rounded-xl bg-slate-200" />
@@ -89,12 +172,12 @@ export default function ReportsPage() {
               <CardHeader className="pb-2">
                 <CardDescription className="text-xs">Taxa de Ocupação</CardDescription>
                 <CardTitle className="text-2xl font-bold text-blue-600 flex items-center justify-between">
-                  <span>{(report?.summary.utilization_rate ?? 0) * 100}%</span>
+                  <span>{(utilizationRate * 100).toFixed(0)}%</span>
                   <TrendingUp className="h-5 w-5 text-blue-500" />
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-xs text-slate-500">
-                {report?.summary.bookings_confirmed ?? 0} reservas confirmadas
+                {confirmedCount} {confirmedCount === 1 ? "reserva confirmada" : "reservas confirmadas"}
               </CardContent>
             </Card>
 
@@ -102,12 +185,12 @@ export default function ReportsPage() {
               <CardHeader className="pb-2">
                 <CardDescription className="text-xs">Taxa de No-Show</CardDescription>
                 <CardTitle className="text-2xl font-bold text-amber-600 flex items-center justify-between">
-                  <span>{((report?.summary.no_show_rate ?? 0) * 100).toFixed(1)}%</span>
+                  <span>{(noShowRate * 100).toFixed(1)}%</span>
                   <Clock className="h-5 w-5 text-amber-500" />
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-xs text-slate-500">
-                {report?.summary.bookings_expired ?? 0} expiradas por tolerância
+                {expiredCount} expiradas por tolerância
               </CardContent>
             </Card>
 
@@ -115,7 +198,7 @@ export default function ReportsPage() {
               <CardHeader className="pb-2">
                 <CardDescription className="text-xs">Estações Disponíveis</CardDescription>
                 <CardTitle className="text-2xl font-bold text-slate-900 flex items-center justify-between">
-                  <span>{report?.summary.total_stations ?? 0}</span>
+                  <span>{totalStations}</span>
                   <Layers className="h-5 w-5 text-slate-400" />
                 </CardTitle>
               </CardHeader>
@@ -128,7 +211,7 @@ export default function ReportsPage() {
               <CardHeader className="pb-2">
                 <CardDescription className="text-xs">Salas de Reunião</CardDescription>
                 <CardTitle className="text-2xl font-bold text-slate-900 flex items-center justify-between">
-                  <span>{report?.summary.total_meeting_rooms ?? 0}</span>
+                  <span>{totalMeetingRooms}</span>
                   <Users className="h-5 w-5 text-slate-400" />
                 </CardTitle>
               </CardHeader>
@@ -149,13 +232,15 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {Object.entries(report?.by_floor || {}).map(([floor, hours]) => (
+                  {byFloorEntries.map(([floor, val]) => (
                     <div key={floor} className="flex items-center justify-between text-sm">
                       <span className="text-slate-600">{floor}º Andar</span>
-                      <span className="font-semibold text-slate-900 font-mono">{hours}h</span>
+                      <span className="font-semibold text-slate-900 font-mono">
+                        {parseOccupancyHours(val)}
+                      </span>
                     </div>
                   ))}
-                  {Object.keys(report?.by_floor || {}).length === 0 && (
+                  {byFloorEntries.length === 0 && (
                     <span className="text-xs text-slate-400">Sem registros para o dia.</span>
                   )}
                 </div>
@@ -172,13 +257,15 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {Object.entries(report?.by_zone || {}).map(([zone, hours]) => (
+                  {byZoneEntries.map(([zone, val]) => (
                     <div key={zone} className="flex items-center justify-between text-sm">
                       <span className="text-slate-600 capitalize">Zona {zone}</span>
-                      <span className="font-semibold text-slate-900 font-mono">{hours}h</span>
+                      <span className="font-semibold text-slate-900 font-mono">
+                        {parseOccupancyHours(val)}
+                      </span>
                     </div>
                   ))}
-                  {Object.keys(report?.by_zone || {}).length === 0 && (
+                  {byZoneEntries.length === 0 && (
                     <span className="text-xs text-slate-400">Sem registros para o dia.</span>
                   )}
                 </div>
@@ -195,7 +282,7 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {Object.entries(report?.cost_center_hours || {}).map(([ccId, hours]) => (
+                  {costCenterEntries.map(([ccId, hours]) => (
                     <div key={ccId} className="flex items-center justify-between text-sm">
                       <span className="text-slate-600 text-xs truncate max-w-[150px]">
                         {ccId.slice(0, 13)}...
@@ -203,7 +290,7 @@ export default function ReportsPage() {
                       <span className="font-semibold text-slate-900 font-mono">{hours}h</span>
                     </div>
                   ))}
-                  {Object.keys(report?.cost_center_hours || {}).length === 0 && (
+                  {costCenterEntries.length === 0 && (
                     <span className="text-xs text-slate-400">Sem registros para o dia.</span>
                   )}
                 </div>
@@ -215,4 +302,3 @@ export default function ReportsPage() {
     </div>
   );
 }
-

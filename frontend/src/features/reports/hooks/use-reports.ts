@@ -3,28 +3,42 @@
 import { useQuery } from "@tanstack/react-query";
 import { API_BASE_URL, apiClient, getToken } from "@/lib/api-client";
 
-export interface UtilizationReportData {
-  summary: {
-    total_stations: number;
-    total_meeting_rooms: number;
-    bookings_pending: number;
-    bookings_confirmed: number;
-    bookings_cancelled: number;
-    bookings_expired: number;
-    utilization_rate: number;
-    no_show_rate: number;
-  };
-  by_floor: Record<string, number>;
-  by_zone: Record<string, number>;
-  cost_center_hours: Record<string, number>;
+export interface ReportSummaryMetrics {
+  total_stations?: number;
+  total_meeting_rooms?: number;
+  bookings_pending?: number;
+  bookings_confirmed?: number;
+  bookings_cancelled?: number;
+  bookings_expired?: number;
+  utilization_rate?: number;
+  occupancy_rate?: number;
+  no_show_rate?: number;
+  occupied_slot_seats?: number;
+  total_slot_seats?: number;
+  available_spots?: number;
+  period?: string;
+}
+
+export interface DimensionOccupancy {
+  bookings_confirmed?: number;
+  occupied_slot_seats?: number;
+}
+
+export interface UtilizationReportData extends Partial<ReportSummaryMetrics> {
+  summary?: ReportSummaryMetrics;
+  by_floor?: Record<string, number | DimensionOccupancy>;
+  by_zone?: Record<string, number | DimensionOccupancy>;
+  cost_center_hours?: Record<string, number>;
 }
 
 export function useUtilizationReport(day: string) {
+  const token = typeof window !== "undefined" ? getToken() : null;
+
   return useQuery({
-    queryKey: ["reports", "utilization", day],
+    queryKey: ["reports", "utilization", day, token],
     queryFn: () =>
       apiClient<UtilizationReportData>(`/api/v1/reports/utilization?day=${day}`),
-    enabled: !!day,
+    enabled: !!day && !!token,
   });
 }
 

@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Any
 
 from domain.entities.booking import BookingStatus
+from domain.entities.workspace import WorkspaceType
 from domain.repositories.booking_repository import BookingRepository
 from domain.repositories.workspace_repository import WorkspaceRepository
 
@@ -28,10 +29,15 @@ class GenerateReportUseCase:
         workspaces = {
             workspace.id: workspace for workspace in await self.workspace_repo.list_all_active()
         }
+        total_stations = sum(1 for w in workspaces.values() if w.type == WorkspaceType.STATION)
+        total_meeting_rooms = sum(1 for w in workspaces.values() if w.type == WorkspaceType.MEETING_ROOM)
         days = (end_day - start_day).days + 1
         total_slot_seats = sum(workspace.capacity for workspace in workspaces.values()) * 40 * days
         occupied_slot_seats = 0
         confirmed_count = 0
+        pending_count = 0
+        cancelled_count = 0
+        expired_count = 0
         cost_center_hours: dict[str, Decimal] = {}
         by_floor: dict[str, dict[str, int]] = {}
         by_zone: dict[str, dict[str, int]] = {}
@@ -55,6 +61,13 @@ class GenerateReportUseCase:
             }
             rows.append(row)
 
+            if booking.status == BookingStatus.PENDING:
+                pending_count += 1
+            elif booking.status == BookingStatus.CANCELLED:
+                cancelled_count += 1
+            elif booking.status == BookingStatus.EXPIRED:
+                expired_count += 1
+
             if booking.status is not BookingStatus.CANCELLED:
                 duration = booking.duration_hours
                 cost_center_hours[row["cost_center_id"]] = (
@@ -75,6 +88,14 @@ class GenerateReportUseCase:
                 summary["bookings_confirmed"] += 1
                 summary["occupied_slot_seats"] += occupied
 
+        total_bookings = len(bookings)
+        occupancy_rate = (
+            round(occupied_slot_seats / total_slot_seats, 4) if total_slot_seats else 0.0
+        )
+        no_show_rate = (
+            round(expired_count / total_bookings, 4) if total_bookings else 0.0
+        )
+
         return {
             "start_date": start_day.isoformat(),
             "end_date": end_day.isoformat(),
@@ -82,10 +103,15 @@ class GenerateReportUseCase:
                 "period": start_day.isoformat()
                 if start_day == end_day
                 else f"{start_day}/{end_day}",
-                "occupancy_rate": round(occupied_slot_seats / total_slot_seats, 4)
-                if total_slot_seats
-                else 0,
+                "occupancy_rate": occupancy_rate,
+                "utilization_rate": occupancy_rate,
                 "bookings_confirmed": confirmed_count,
+                "bookings_pending": pending_count,
+                "bookings_cancelled": cancelled_count,
+                "bookings_expired": expired_count,
+                "no_show_rate": no_show_rate,
+                "total_stations": total_stations,
+                "total_meeting_rooms": total_meeting_rooms,
                 "occupied_slot_seats": occupied_slot_seats,
                 "total_slot_seats": total_slot_seats,
                 "available_spots": max(0, total_slot_seats - occupied_slot_seats),

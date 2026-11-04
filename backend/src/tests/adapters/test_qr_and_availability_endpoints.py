@@ -54,12 +54,24 @@ def test_qr_and_json_body_endpoints(api_client):
     booking_id = booking_data["id"]
     assert "qr_token" in booking_data
 
-    # 2. Test GET /api/v1/bookings/{id}/qr returns image/png with auth
+    # 2. Test GET /api/v1/bookings/{id}/qr returns image/png with auth header
     assert client.get(f"/api/v1/bookings/{booking_id}/qr").status_code == 401
     qr_res = client.get(f"/api/v1/bookings/{booking_id}/qr", headers=headers)
     assert qr_res.status_code == 200
     assert qr_res.headers["content-type"] == "image/png"
+    assert "X-Checkin-Token" in qr_res.headers
     assert len(qr_res.content) > 100
+
+    # Test GET /api/v1/bookings/{id}/qr with query param token
+    qr_query_res = client.get(f"/api/v1/bookings/{booking_id}/qr?token={employee_token}")
+    assert qr_query_res.status_code == 200
+    assert qr_query_res.headers["content-type"] == "image/png"
+    assert len(qr_query_res.content) > 100
+
+    # Test GET /api/v1/bookings/{id}/checkin-token
+    token_res = client.get(f"/api/v1/bookings/{booking_id}/checkin-token", headers=headers)
+    assert token_res.status_code == 200
+    assert "qr_token" in token_res.json()
 
     # Test QR 404 for unknown booking
     assert client.get(f"/api/v1/bookings/{UUID(int=999)}/qr", headers=headers).status_code == 404

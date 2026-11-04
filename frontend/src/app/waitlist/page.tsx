@@ -25,6 +25,7 @@ export default function WaitlistPage() {
   const cancelWaitlistMutation = useCancelWaitlist();
   const createBookingMutation = useCreateBooking();
 
+  const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [actionMessage, setActionMessage] = useState<{
     type: "success" | "error";
@@ -32,6 +33,7 @@ export default function WaitlistPage() {
   } | null>(null);
 
   useEffect(() => {
+    setMounted(true);
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -85,10 +87,10 @@ export default function WaitlistPage() {
       <div className="border-b border-slate-200 pb-5">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
           <Clock className="h-6 w-6 text-blue-600" />
-          Fila de Espera Automática (FIFO)
+          Fila de Espera Automática
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Quando uma reserva for cancelada, o próximo da fila é notificado em tempo real com prioridade exclusiva de 5 minutos (anti-sniping).
+          Quando uma reserva for cancelada, o próximo da fila é notificado em tempo real com prioridade exclusiva de 5 minutos para confirmação.
         </p>
       </div>
 
@@ -110,7 +112,7 @@ export default function WaitlistPage() {
       )}
 
       <div className="mt-6 space-y-4">
-        {isLoading ? (
+        {isLoading || !mounted ? (
           <div className="space-y-3">
             {[...Array(2)].map((_, i) => (
               <div key={i} className="h-28 animate-pulse rounded-lg bg-slate-200" />

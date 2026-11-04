@@ -73,6 +73,11 @@ async def test_report_aggregates_utilization_and_cost_center_hours():
     assert report["summary"]["occupied_slot_seats"] == 2
     assert report["summary"]["total_slot_seats"] == 80
     assert report["summary"]["occupancy_rate"] == 0.025
+    assert report["summary"]["utilization_rate"] == 0.025
+    assert report["summary"]["bookings_pending"] == 1
+    assert report["summary"]["total_stations"] == 0
+    assert report["summary"]["total_meeting_rooms"] == 1
+    assert report["summary"]["no_show_rate"] == 0.0
     assert report["cost_center_hours"][str(cost_center_id)] == Decimal("1.0")
     assert report["by_floor"]["2"]["occupied_slot_seats"] == 2
     assert len(report["bookings"]) == 2

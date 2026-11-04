@@ -19,6 +19,15 @@ export interface AccountApiItem {
   is_eligible_for_booking: boolean;
 }
 
+export interface CreateAccountPayload {
+  name: string;
+  email: string;
+  password: string;
+  cost_center_id: string;
+  role: "employee" | "admin";
+  is_eligible_for_booking: boolean;
+}
+
 export interface QuotaApiItem {
   id: string;
   cost_center_id: string;
@@ -38,6 +47,23 @@ export function useAdminCostCenters() {
   return useQuery({
     queryKey: ["admin", "cost-centers"],
     queryFn: () => apiClient<{ items: CostCenterApiItem[] }>("/api/v1/admin/cost-centers"),
+  });
+}
+
+export function useCreateCostCenter() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: { name: string; monthly_quota_hours: number }) => {
+      return apiClient<CostCenterApiItem>("/api/v1/admin/cost-centers", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "cost-centers"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "quotas"] });
+    },
   });
 }
 
@@ -70,6 +96,22 @@ export function useAdminAccounts() {
   return useQuery({
     queryKey: ["admin", "accounts"],
     queryFn: () => apiClient<{ items: AccountApiItem[] }>("/api/v1/admin/accounts"),
+  });
+}
+
+export function useCreateAccount() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: CreateAccountPayload) => {
+      return apiClient<AccountApiItem>("/api/v1/admin/accounts", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "accounts"] });
+    },
   });
 }
 
@@ -109,6 +151,21 @@ export function useUpdateAccount() {
   });
 }
 
+export function useDeleteAccount() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      return apiClient<{ id: string; deleted: boolean }>(`/api/v1/admin/accounts/${id}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "accounts"] });
+    },
+  });
+}
+
 export function useAdminQuotas() {
   return useQuery({
     queryKey: ["admin", "quotas"],
@@ -123,3 +180,33 @@ export function useAdminHolidays() {
   });
 }
 
+export function useCreateHoliday() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: { day: string; description: string }) => {
+      return apiClient<HolidayApiItem>("/api/v1/admin/holidays", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "holidays"] });
+    },
+  });
+}
+
+export function useDeleteHoliday() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (day: string) => {
+      return apiClient<{ day: string; deleted: boolean }>(`/api/v1/admin/holidays/${day}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "holidays"] });
+    },
+  });
+}

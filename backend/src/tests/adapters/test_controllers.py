@@ -650,6 +650,18 @@ def test_admin_cost_centers_and_accounts_endpoints(api_client):
     )
     assert invalid_cc.status_code == 404
 
+    # Deleting own admin account is blocked (400)
+    del_self = client.delete(f"/api/v1/admin/accounts/{admin_id}", headers=admin_headers)
+    assert del_self.status_code == 400
+
+    # Deleting nonexistent account returns 404
+    assert client.delete(f"/api/v1/admin/accounts/{uuid4()}", headers=admin_headers).status_code == 404
+
+    # Deleting account succeeds (200)
+    del_emp = client.delete(f"/api/v1/admin/accounts/{emp_created['id']}", headers=admin_headers)
+    assert del_emp.status_code == 200
+    assert del_emp.json()["deleted"] is True
+
 
 def test_new_endpoints_and_cors(api_client):
     client, sessions = api_client

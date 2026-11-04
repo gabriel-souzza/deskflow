@@ -2,8 +2,10 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { QueryProvider } from "@/lib/query-provider";
 import { Navbar } from "@/components/navigation/navbar";
+import { Footer } from "@/components/navigation/footer";
 import { OfflineBanner } from "@/components/offline/offline-banner";
 import { RealtimeListener } from "@/components/realtime/realtime-listener";
+import { AuthGuard } from "@/features/auth/components/auth-guard";
 
 export const metadata: Metadata = {
   title: "DeskFlow — Gestão Inteligente de Espaços Híbridos",
@@ -38,21 +40,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" className="light" style={{ colorScheme: "light" }}>
       <body className="min-h-screen bg-slate-50 font-sans text-slate-900 antialiased selection:bg-blue-500 selection:text-white">
         <QueryProvider>
           <div className="flex min-h-screen flex-col">
             <OfflineBanner />
             <Navbar />
-            <main className="flex-1">{children}</main>
+            <main className="flex-1">
+              <AuthGuard>{children}</AuthGuard>
+            </main>
             <RealtimeListener />
-            <footer className="border-t border-slate-200 bg-white py-6 text-center text-xs text-slate-500">
-              DeskFlow &copy; {new Date().getFullYear()} — Plataforma Corporativa de Espaços Híbridos
-            </footer>
+            <Footer />
           </div>
         </QueryProvider>
       </body>
     </html>
   );
 }
-
