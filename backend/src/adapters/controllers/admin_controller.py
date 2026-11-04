@@ -20,7 +20,7 @@ from application.use_cases.set_quota import SetQuotaUseCase
 from domain.entities.holiday import Holiday
 from domain.entities.quota_period import QuotaExceededError
 from infra.database import get_db
-from infra.models import CostCenterORM, EmployeeORM, QuotaPeriodORM
+from infra.models import CostCenterORM, EmployeeORM, HolidayORM, QuotaPeriodORM
 from infra.security import hash_password
 from infra.unit_of_work import SqlAlchemyUnitOfWork
 
@@ -49,6 +49,39 @@ async def block_holiday(
         SqlAlchemyUnitOfWork(db),
     ).execute(holiday)
     return {"day": saved.day.isoformat(), "description": saved.description, "blocked": True}
+
+
+@router.get("/holidays")
+async def list_holidays(
+    _user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """GET /api/v1/admin/holidays — Listar feriados cadastrados (UC17)."""
+    result = await db.execute(select(HolidayORM).order_by(HolidayORM.day))
+    return {
+        "items": [
+            {
+                "day": h.day.isoformat(),
+                "description": h.description,
+            }
+            for h in result.scalars().all()
+        ]
+    }
+
+
+@router.delete("/holidays/{day}", status_code=200)
+async def delete_holiday(
+    day: date,
+    _user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """DELETE /api/v1/admin/holidays/{day} — Desbloquear feriado (UC17)."""
+    holiday = await db.get(HolidayORM, day)
+    if holiday is None:
+        raise HTTPException(status_code=404, detail="Holiday not found")
+    await db.delete(holiday)
+    await db.commit()
+    return {"day": day.isoformat(), "deleted": True}
 
 
 class AccountCreate(BaseModel):
@@ -266,4 +299,156 @@ async def list_accounts(
             }
             for emp, center in result.all()
         ]
+    }
+
+
+class AccountUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    email: str | None = Field(default=None, min_length=3, max_length=320)
+    password: str | None = Field(default=None, min_length=12, max_length=128)
+    cost_center_id: UUID | None = None
+    role: str | None = Field(default=None, pattern=r"^(employee|admin)$")
+    is_eligible_for_booking: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("Name cannot be blank")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().casefold()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError("Invalid email address")
+        return value
+
+
+@router.put("/accounts/{id}")
+async def update_account(
+    id: UUID,
+    payload: AccountUpdate,
+    _user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """PUT /api/v1/admin/accounts/{id} — Atualizar dados de colaborador."""
+    employee = await db.get(EmployeeORM, id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    if payload.cost_center_id is not None:
+        cost_center = await db.get(CostCenterORM, payload.cost_center_id)
+        if cost_center is None:
+            raise HTTPException(status_code=404, detail="Cost center not found")
+        employee.cost_center_id = payload.cost_center_id
+
+    if payload.email is not None and payload.email != employee.email:
+        existing = await db.scalar(
+            select(EmployeeORM).where(EmployeeORM.email == payload.email, EmployeeORM.id != id)
+        )
+        if existing is not None:
+            raise HTTPException(status_code=409, detail="Email is already registered")
+        employee.email = payload.email
+
+    if payload.name is not None:
+        employee.name = payload.name
+
+    if payload.password is not None:
+        employee.password_hash = hash_password(payload.password)
+
+    if payload.role is not None:
+        employee.role = payload.role
+
+    if payload.is_eligible_for_booking is not None:
+        employee.is_eligible_for_booking = payload.is_eligible_for_booking
+
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Email is already registered") from exc
+
+    await db.refresh(employee)
+    return {
+        "id": str(employee.id),
+        "name": employee.name,
+        "email": employee.email,
+        "cost_center_id": str(employee.cost_center_id) if employee.cost_center_id else None,
+        "role": employee.role,
+        "is_eligible_for_booking": employee.is_eligible_for_booking,
+    }
+
+
+class CostCenterUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    monthly_quota_hours: Decimal | None = Field(default=None, ge=0)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("Cost center name cannot be blank")
+        return value
+
+
+@router.put("/cost-centers/{id}")
+async def update_cost_center(
+    id: UUID,
+    payload: CostCenterUpdate,
+    _user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """PUT /api/v1/admin/cost-centers/{id} — Atualizar centro de custo."""
+    center = await db.get(CostCenterORM, id)
+    if center is None:
+        raise HTTPException(status_code=404, detail="Cost center not found")
+
+    if payload.name is not None and payload.name != center.name:
+        existing = await db.scalar(
+            select(CostCenterORM).where(CostCenterORM.name == payload.name, CostCenterORM.id != id)
+        )
+        if existing is not None:
+            raise HTTPException(status_code=409, detail="Cost center name already exists")
+        center.name = payload.name
+
+    if payload.monthly_quota_hours is not None:
+        today = date.today()
+        period_start = datetime.combine(today.replace(day=1), datetime.min.time())
+        current_qp = await db.scalar(
+            select(QuotaPeriodORM).where(
+                QuotaPeriodORM.cost_center_id == id,
+                QuotaPeriodORM.period_start == period_start,
+            )
+        )
+        if current_qp is not None:
+            if payload.monthly_quota_hours < current_qp.consumed_hours:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Quota cannot be set below hours already consumed",
+                )
+            current_qp.total_hours = payload.monthly_quota_hours
+
+        center.monthly_quota_hours = payload.monthly_quota_hours
+
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Cost center name already exists") from exc
+
+    await db.refresh(center)
+    return {
+        "id": str(center.id),
+        "name": center.name,
+        "monthly_quota_hours": float(center.monthly_quota_hours),
     }

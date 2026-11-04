@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.controllers.auth import require_auth
@@ -15,6 +16,7 @@ from adapters.repositories.workspace_repo_postgres import WorkspaceRepositoryPos
 from application.use_cases.join_waitlist import JoinWaitlistUseCase
 from domain.value_objects.time_slot import TimeSlot
 from infra.database import get_db
+from infra.models import WaitlistORM
 from infra.unit_of_work import SqlAlchemyUnitOfWork
 
 router = APIRouter(prefix="/api/v1/waitlist", tags=["waitlist"])
@@ -76,3 +78,54 @@ async def join_waitlist(
         "slot_end": entry.desired_slot_end.isoformat(),
         "created_at": entry.created_at.isoformat(),
     }
+
+
+@router.get("")
+async def list_waitlist(
+    current_user: Annotated[dict, Depends(require_auth)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """GET /api/v1/waitlist — Listar posições na fila de espera (UC05)."""
+    emp_id = current_user.get("employee_id")
+    if not emp_id and current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Employee account required")
+
+    stmt = select(WaitlistORM).order_by(WaitlistORM.created_at)
+    if current_user.get("role") != "admin" and emp_id:
+        stmt = stmt.where(WaitlistORM.employee_id == UUID(emp_id))
+
+    result = await db.execute(stmt)
+    entries = result.scalars().all()
+    return {
+        "items": [
+            {
+                "id": str(e.id),
+                "workspace_id": str(e.workspace_id),
+                "employee_id": str(e.employee_id),
+                "desired_start": e.desired_start.isoformat() if e.desired_start else None,
+                "desired_end": e.desired_end.isoformat() if e.desired_end else None,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+                "notified_at": e.notified_at.isoformat() if e.notified_at else None,
+            }
+            for e in entries
+        ]
+    }
+
+
+@router.delete("/{id}", status_code=204)
+async def leave_waitlist(
+    id: UUID,
+    current_user: Annotated[dict, Depends(require_auth)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """DELETE /api/v1/waitlist/{id} — Cancelar entrada na fila de espera (UC05)."""
+    entry = await db.get(WaitlistORM, id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Waitlist entry not found")
+
+    emp_id = current_user.get("employee_id")
+    if current_user.get("role") != "admin" and str(entry.employee_id) != emp_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    await db.delete(entry)
+    await db.commit()

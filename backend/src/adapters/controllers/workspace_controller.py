@@ -33,6 +33,15 @@ class WorkspaceCreate(BaseModel):
     resources: list[str] = Field(default_factory=list)
 
 
+class WorkspaceUpdate(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=100)
+    floor: str | None = Field(default=None, min_length=1, max_length=100)
+    zone: str | None = Field(default=None, min_length=1, max_length=100)
+    type: Literal["estacao", "sala"] | None = None
+    capacity: int | None = Field(default=None, ge=1)
+    resources: list[str] | None = None
+
+
 @router.get("/api/v1/workspaces")
 async def list_workspaces(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(WorkspaceORM).order_by(WorkspaceORM.code))
@@ -49,6 +58,23 @@ async def list_workspaces(db: AsyncSession = Depends(get_db)):
             }
             for item in result.scalars().all()
         ]
+    }
+
+
+@router.get("/api/v1/workspaces/{id}")
+async def get_workspace(id: UUID, db: AsyncSession = Depends(get_db)):
+    """GET /api/v1/workspaces/{id} — Detalhes de um espaço físico."""
+    item = await db.get(WorkspaceORM, id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return {
+        "id": str(item.id),
+        "code": item.code,
+        "floor": item.floor,
+        "zone": item.zone,
+        "type": item.type,
+        "capacity": item.capacity,
+        "resources": json.loads(item.resources or "[]"),
     }
 
 
@@ -131,6 +157,56 @@ async def create_workspace(
         "type": saved.type.value,
         "capacity": saved.capacity,
         "resources": payload.resources,
+    }
+
+
+@router.put("/api/v1/admin/workspaces/{id}")
+async def update_workspace(
+    id: UUID,
+    payload: WorkspaceUpdate,
+    _user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """PUT /api/v1/admin/workspaces/{id} — UC12: Atualizar espaço."""
+    orm = await db.get(WorkspaceORM, id)
+    if orm is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    new_type = WorkspaceType(payload.type) if payload.type else WorkspaceType(orm.type)
+    new_capacity = payload.capacity if payload.capacity is not None else orm.capacity
+    if new_type == WorkspaceType.STATION and new_capacity != 1:
+        raise HTTPException(status_code=422, detail="Station capacity must be 1")
+
+    if payload.code and payload.code != orm.code:
+        existing = await db.scalar(select(WorkspaceORM).where(WorkspaceORM.code == payload.code))
+        if existing is not None:
+            raise HTTPException(status_code=409, detail="Workspace code already exists")
+
+    workspace = Workspace(
+        id=id,
+        code=payload.code or orm.code,
+        floor=payload.floor or orm.floor,
+        zone=payload.zone or orm.zone,
+        type=new_type,
+        capacity=new_capacity,
+    )
+    saved = await ManageWorkspaceUseCase(
+        WorkspaceRepositoryPostgres(db), SqlAlchemyUnitOfWork(db)
+    ).update(workspace)
+
+    if payload.resources is not None:
+        orm.resources = json.dumps(payload.resources)
+        await db.commit()
+
+    await sse_publisher.publish({"type": "workspace.updated", "workspace_id": str(saved.id)})
+    return {
+        "id": str(saved.id),
+        "code": saved.code,
+        "floor": saved.floor,
+        "zone": saved.zone,
+        "type": saved.type.value,
+        "capacity": saved.capacity,
+        "resources": payload.resources if payload.resources is not None else json.loads(orm.resources or "[]"),
     }
 
 

@@ -3,15 +3,19 @@ import secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import date
+from typing import Annotated
+from uuid import UUID
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.controllers.admin_controller import router as admin_router
+from adapters.controllers.auth import require_auth
 from adapters.controllers.booking_controller import router as booking_router
 from adapters.controllers.checkin_controller import router as checkin_router
 from adapters.controllers.integration_controller import router as integration_router
@@ -21,6 +25,7 @@ from adapters.controllers.workspace_controller import router as workspace_router
 from adapters.events.in_memory_event_bus import event_bus
 from adapters.events.quota_alert_handler import QuotaAlertHandler
 from adapters.events.sse_publisher import sse_publisher
+from adapters.repositories.audit_log_repo_postgres import AuditLogRepositoryPostgres
 from adapters.repositories.availability_window_repo_postgres import (
     AvailabilityWindowRepositoryPostgres,
 )
@@ -32,7 +37,7 @@ from application.use_cases.expire_waitlist import ExpireWaitlistUseCase
 from application.use_cases.generate_daily_availability import GenerateDailyAvailabilityUseCase
 from application.use_cases.notify_waitlist import NotifyWaitlistUseCase
 from application.use_cases.release_expired import ReleaseExpiredBookingsUseCase
-from domain.events.events import BookingCancelled, BookingExpired, QuotaConsumed
+from domain.events.events import QuotaConsumed
 from infra.database import SessionLocal, get_db
 from infra.models import EmployeeORM
 from infra.security import create_access_token, verify_password
@@ -55,6 +60,7 @@ async def release_expired_bookings_job() -> None:
             booking_repo=booking_repo,
             unit_of_work=uow,
             event_bus=event_bus,
+            audit_log_repo=AuditLogRepositoryPostgres(session),
         ).execute()
 
         for booking in released:
@@ -139,6 +145,14 @@ Workspace reservation system for hybrid work environments.
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(booking_router)
 app.include_router(checkin_router)
 app.include_router(admin_router)
@@ -190,6 +204,32 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
         {"sub": str(employee.id), "role": role, "employee_id": str(employee.id)}
     )
     return {"access_token": token, "token_type": "bearer"}
+
+
+@app.get("/api/v1/auth/me", tags=["auth"])
+async def get_me(
+    current_user: Annotated[dict, Depends(require_auth)],
+    db: AsyncSession = Depends(get_db),
+):
+    """GET /api/v1/auth/me — Obter perfil do colaborador autenticado."""
+    emp_id = current_user.get("employee_id")
+    if not emp_id:
+        return {"sub": current_user.get("sub"), "role": current_user.get("role")}
+    try:
+        emp_uuid = UUID(emp_id)
+    except ValueError:
+        return {"sub": current_user.get("sub"), "role": current_user.get("role")}
+    employee = await db.scalar(select(EmployeeORM).where(EmployeeORM.id == emp_uuid))
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return {
+        "id": str(employee.id),
+        "name": employee.name,
+        "email": employee.email,
+        "role": employee.role,
+        "cost_center_id": str(employee.cost_center_id) if employee.cost_center_id else None,
+        "is_eligible_for_booking": employee.is_eligible_for_booking,
+    }
 
 
 @app.get("/health")

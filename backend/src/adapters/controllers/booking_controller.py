@@ -91,6 +91,7 @@ async def create_booking(
         unit_of_work=SqlAlchemyUnitOfWork(db),
         window_repo=AvailabilityWindowRepositoryPostgres(db),
         event_bus=event_bus,
+        waitlist_repo=WaitlistRepositoryPostgres(db),
     )
     result = await use_case.execute(
         CreateBookingCommand(ws_id, emp_id, cc_id, slot)

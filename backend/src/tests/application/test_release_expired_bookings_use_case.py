@@ -86,3 +86,36 @@ async def test_release_expired_bookings_with_uow_and_event_bus():
     assert len(released) == 1
     assert len(bus.published) == 1
 
+
+class FakeAuditRepo:
+    def __init__(self):
+        self.entries = []
+
+    async def create(self, **entry):
+        self.entries.append(entry)
+
+
+@pytest.mark.asyncio
+async def test_release_expired_bookings_records_system_audit_log():
+    booking = Booking(
+        workspace_id=uuid4(),
+        employee_id=uuid4(),
+        cost_center_id=uuid4(),
+        slot=TimeSlot(
+            start=datetime(2020, 1, 1, 9, 0, tzinfo=UTC),
+            end=datetime(2020, 1, 1, 9, 15, tzinfo=UTC),
+        ),
+    )
+    repository = FakeBookingRepository([booking])
+    audit_repo = FakeAuditRepo()
+
+    released = await ReleaseExpiredBookingsUseCase(
+        repository, audit_log_repo=audit_repo
+    ).execute()
+
+    assert len(released) == 1
+    assert len(audit_repo.entries) == 1
+    assert audit_repo.entries[0]["action"] == "expired"
+    assert audit_repo.entries[0]["actor_id"] is None
+    assert audit_repo.entries[0]["entity_id"] == str(booking.id)
+

@@ -27,12 +27,17 @@ async def utilization(
     _user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """GET /api/v1/reports/utilization — Dashboard (UC13)."""
+    """GET /api/v1/reports/utilization — Dashboard (UC13, RF07)."""
     try:
         report = await _generate_report(db).execute(day, day)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return report["summary"]
+    return {
+        **report["summary"],
+        "by_floor": report["by_floor"],
+        "by_zone": report["by_zone"],
+        "cost_center_hours": {k: float(v) for k, v in report["cost_center_hours"].items()},
+    }
 
 
 @router.get("/export")
@@ -43,7 +48,7 @@ async def export_report(
     _user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """GET /api/v1/reports/export — CSV/PDF (UC14)."""
+    """GET /api/v1/reports/export — CSV/PDF (UC14, RF09, RF10)."""
     if end_date < start_date:
         raise HTTPException(status_code=422, detail="end_date must not precede start_date")
     report = await _generate_report(db).execute(start_date, end_date)
@@ -65,6 +70,12 @@ async def export_report(
                 booking["status"],
             ]
         )
+    writer.writerow([])
+    writer.writerow(["--- RESUMO POR CENTRO DE CUSTO ---"])
+    writer.writerow(["cost_center_id", "total_hours"])
+    for cc_id, hours in report["cost_center_hours"].items():
+        writer.writerow([cc_id, str(hours)])
+
     csv_content = output.getvalue()
     filename = f"deskflow-report-{start_date.isoformat()}-{end_date.isoformat()}"
     if format == "csv":
@@ -78,12 +89,12 @@ async def export_report(
     page = canvas.Canvas(pdf, pagesize=landscape(letter))
     page.drawString(36, 560, f"DeskFlow bookings: {start_date} to {end_date}")
     y = 530
-    for line in csv_content.splitlines()[:35]:
-        page.drawString(36, y, line[:150])
-        y -= 14
+    for line in csv_content.splitlines():
         if y < 36:
             page.showPage()
             y = 560
+        page.drawString(36, y, line[:150])
+        y -= 14
     page.save()
     return Response(
         content=pdf.getvalue(),

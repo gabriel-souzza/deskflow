@@ -54,14 +54,15 @@ def test_qr_and_json_body_endpoints(api_client):
     booking_id = booking_data["id"]
     assert "qr_token" in booking_data
 
-    # 2. Test GET /api/v1/bookings/{id}/qr returns image/png
-    qr_res = client.get(f"/api/v1/bookings/{booking_id}/qr")
+    # 2. Test GET /api/v1/bookings/{id}/qr returns image/png with auth
+    assert client.get(f"/api/v1/bookings/{booking_id}/qr").status_code == 401
+    qr_res = client.get(f"/api/v1/bookings/{booking_id}/qr", headers=headers)
     assert qr_res.status_code == 200
     assert qr_res.headers["content-type"] == "image/png"
     assert len(qr_res.content) > 100
 
     # Test QR 404 for unknown booking
-    assert client.get(f"/api/v1/bookings/{UUID(int=999)}/qr").status_code == 404
+    assert client.get(f"/api/v1/bookings/{UUID(int=999)}/qr", headers=headers).status_code == 404
 
     # 3. Test GET /api/v1/availability with filters
     avail_res = client.get(

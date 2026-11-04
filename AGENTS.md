@@ -74,9 +74,9 @@ src/
 ### TypeScript (frontend)
 
 - Zod schema → `z.infer<typeof X>` para tipos
-- Componentes em `apps/web/src/features/<feature>/components/`
-- Hooks em `apps/web/src/features/<feature>/hooks/`
-- `apps/web/src/features/<feature>/domain/` para lógica pura (testável sem React)
+- Componentes em `frontend/src/features/<feature>/components/`
+- Hooks em `frontend/src/features/<feature>/hooks/`
+- `frontend/src/features/<feature>/domain/` para lógica pura (testável sem React)
 
 ## TDD (red → green → refactor)
 

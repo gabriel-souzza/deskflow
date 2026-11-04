@@ -46,6 +46,8 @@ class ExpireWaitlistUseCase:
                         if occupied < ws.capacity:
                             # Vaga ainda desocupada: notifica o próximo da fila
                             await self.notify_use_case.execute(ws.id, slot)
-                            expired_count += 1
+                        if hasattr(self.waitlist_repo, "delete"):
+                            await self.waitlist_repo.delete(entry.id)
+                        expired_count += 1
 
         return expired_count

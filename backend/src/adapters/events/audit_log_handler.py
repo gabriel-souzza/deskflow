@@ -48,7 +48,7 @@ class AuditLogHandler:
             )
         elif isinstance(event, BookingExpired):
             await self.audit_log_repo.create(
-                actor_id=event.employee_id,
+                actor_id=None,
                 action="expired",
                 entity_type="booking",
                 entity_id=str(event.booking_id),

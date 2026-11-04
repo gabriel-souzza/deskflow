@@ -296,3 +296,100 @@ async def test_create_booking_quota_not_found_returns_404():
     assert result.status_code == 404
 
 
+
+
+class FakeWaitlistRepo:
+    def __init__(self, entries=None):
+        self.entries = list(entries or [])
+        self.deleted = []
+
+    async def list_all_by_workspace(self, workspace_id):
+        return [e for e in self.entries if e.workspace_id == workspace_id]
+
+    async def get_by_workspace_employee(self, workspace_id, employee_id):
+        return next(
+            (e for e in self.entries if e.workspace_id == workspace_id and e.employee_id == employee_id),
+            None,
+        )
+
+    async def delete(self, waitlist_id):
+        self.deleted.append(waitlist_id)
+        self.entries = [e for e in self.entries if e.id != waitlist_id]
+
+    async def save(self, entry):
+        self.entries = [entry if e.id == entry.id else e for e in self.entries]
+        return entry
+
+    async def create(self, workspace_id, employee_id, desired_slot):
+        from domain.entities.waitlist import Waitlist
+
+        entry = Waitlist(
+            workspace_id=workspace_id,
+            employee_id=employee_id,
+            desired_slot_start=desired_slot.start,
+            desired_slot_end=desired_slot.end,
+        )
+        self.entries.append(entry)
+        return entry
+
+
+@pytest.mark.asyncio
+async def test_create_booking_blocked_when_slot_held_by_notified_waitlist_employee():
+    from domain.entities.waitlist import Waitlist
+
+    use_case, command, _booking_repo, _quota_repo, _audit_repo = build_booking_dependencies()
+    other_emp_id = uuid4()
+    entry = Waitlist(
+        workspace_id=command.workspace_id,
+        employee_id=other_emp_id,
+        desired_slot_start=command.slot.start,
+        desired_slot_end=command.slot.end,
+        notified_at=datetime.now(UTC) - timedelta(minutes=2),
+    )
+    waitlist_repo = FakeWaitlistRepo([entry])
+    use_case.waitlist_repo = waitlist_repo
+
+    result = await use_case.execute(command)
+    assert result.status_code == 409
+    assert result.message == "Slot is reserved for a waitlist notification"
+
+
+@pytest.mark.asyncio
+async def test_create_booking_allowed_for_notified_waitlist_employee_and_deletes_entry():
+    from domain.entities.waitlist import Waitlist
+
+    use_case, command, _booking_repo, _quota_repo, _audit_repo = build_booking_dependencies()
+    entry = Waitlist(
+        workspace_id=command.workspace_id,
+        employee_id=command.employee_id,
+        desired_slot_start=command.slot.start,
+        desired_slot_end=command.slot.end,
+        notified_at=datetime.now(UTC) - timedelta(minutes=2),
+    )
+    waitlist_repo = FakeWaitlistRepo([entry])
+    use_case.waitlist_repo = waitlist_repo
+
+    result = await use_case.execute(command)
+    assert result.status_code == 201
+    assert entry.id in waitlist_repo.deleted
+    assert len(waitlist_repo.entries) == 0
+
+
+@pytest.mark.asyncio
+async def test_create_booking_allowed_when_notification_is_expired():
+    from domain.entities.waitlist import Waitlist
+
+    use_case, command, _booking_repo, _quota_repo, _audit_repo = build_booking_dependencies()
+    other_emp_id = uuid4()
+    entry = Waitlist(
+        workspace_id=command.workspace_id,
+        employee_id=other_emp_id,
+        desired_slot_start=command.slot.start,
+        desired_slot_end=command.slot.end,
+        notified_at=datetime.now(UTC) - timedelta(minutes=6),
+    )
+    waitlist_repo = FakeWaitlistRepo([entry])
+    use_case.waitlist_repo = waitlist_repo
+
+    result = await use_case.execute(command)
+    assert result.status_code == 201

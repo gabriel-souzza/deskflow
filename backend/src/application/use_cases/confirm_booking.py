@@ -46,7 +46,11 @@ class ConfirmBookingUseCase:
             start = booking.slot.start
             if start.tzinfo is None:
                 start = start.replace(tzinfo=UTC)
-            if now < start or now > start + timedelta(minutes=grace_minutes):
+            early_tolerance_minutes = 10
+            if (
+                now < start - timedelta(minutes=early_tolerance_minutes)
+                or now > start + timedelta(minutes=grace_minutes)
+            ):
                 raise CheckInError("Check-in is outside the allowed time window")
 
             try:

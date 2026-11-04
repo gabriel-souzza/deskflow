@@ -1,9 +1,9 @@
 import asyncio
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from infra.models import CostCenterORM, EmployeeORM, QuotaPeriodORM, WorkspaceORM
+from infra.models import CostCenterORM, EmployeeORM, QuotaPeriodORM, WaitlistORM, WorkspaceORM
 from infra.security import create_access_token, verify_token
 from main import app
 
@@ -20,7 +20,9 @@ def test_documented_business_routes_are_registered():
         ("/api/v1/admin/holidays", "post"),
         ("/api/v1/admin/cost-centers", "get"),
         ("/api/v1/admin/cost-centers", "post"),
+        ("/api/v1/admin/cost-centers/{id}", "put"),
         ("/api/v1/admin/accounts", "get"),
+        ("/api/v1/admin/accounts/{id}", "put"),
         ("/api/v1/waitlist", "post"),
         ("/api/v1/availability/stream", "get"),
     }
@@ -285,6 +287,61 @@ def test_waitlist_enrollment_is_idempotent_and_notified_after_cancellation(api_c
 
     asyncio.run(assert_notification_persisted())
 
+    # Seed an employee who was not notified to test anti-sniping priority guard
+    async def seed_second_emp():
+        async with sessions() as session:
+            emp2 = EmployeeORM(
+                name="Sniper Employee",
+                email="sniper@example.test",
+                cost_center_id=UUID(cost_center_id),
+                is_eligible_for_booking=True,
+            )
+            session.add(emp2)
+            await session.commit()
+            return str(emp2.id)
+
+    emp2_id = asyncio.run(seed_second_emp())
+    h2 = {
+        "Authorization": "Bearer "
+        + create_access_token({"sub": emp2_id, "role": "employee", "employee_id": emp2_id})
+    }
+
+    # Sniper tries to book the held slot -> 409 conflict
+    snipe_attempt = client.post(
+        "/api/v1/bookings",
+        params={
+            "workspace_id": workspace_id,
+            "employee_id": emp2_id,
+            "cost_center_id": cost_center_id,
+            "slot_start": start.isoformat(),
+            "slot_end": end.isoformat(),
+        },
+        headers=h2,
+    )
+    assert snipe_attempt.status_code == 409
+    assert "Slot is reserved for a waitlist notification" in snipe_attempt.json()["detail"]
+
+    # Notified employee books -> succeeds (201) and consumes waitlist hold
+    notified_booking = client.post(
+        "/api/v1/bookings",
+        params={
+            "workspace_id": workspace_id,
+            "employee_id": employee_id,
+            "cost_center_id": cost_center_id,
+            "slot_start": start.isoformat(),
+            "slot_end": end.isoformat(),
+        },
+        headers=headers,
+    )
+    assert notified_booking.status_code == 201
+
+    async def assert_waitlist_entry_consumed():
+        async with sessions() as session:
+            entry = await session.get(WaitlistORM, UUID(joined.json()["id"]))
+            assert entry is None
+
+    asyncio.run(assert_waitlist_entry_consumed())
+
 
 def test_admin_quotas_requires_authentication(api_client):
     client, _sessions = api_client
@@ -519,3 +576,172 @@ def test_admin_cost_centers_and_accounts_endpoints(api_client):
     assert list_acc.status_code == 200
     accounts = list_acc.json()["items"]
     assert any(acc["email"] == "admin.super@deskflow.com" for acc in accounts)
+
+    # Admin updates cost center
+    update_cc = client.put(
+        f"/api/v1/admin/cost-centers/{cc_data['id']}",
+        json={"name": "Logistics & Global Supply", "monthly_quota_hours": 150.0},
+        headers=admin_headers,
+    )
+    assert update_cc.status_code == 200
+    assert update_cc.json()["name"] == "Logistics & Global Supply"
+    assert update_cc.json()["monthly_quota_hours"] == 150.0
+
+    # Cost center 404 for nonexistent id
+    assert client.put(f"/api/v1/admin/cost-centers/{uuid4()}", json={"name": "Ghost"}, headers=admin_headers).status_code == 404
+
+    # Admin creates second cost center to test duplicate name rejection
+    cc2 = client.post("/api/v1/admin/cost-centers", json={"name": "Finance", "monthly_quota_hours": 80.0}, headers=admin_headers)
+    assert cc2.status_code == 201
+    dup_put_cc = client.put(f"/api/v1/admin/cost-centers/{cc2.json()['id']}", json={"name": "Logistics & Global Supply"}, headers=admin_headers)
+    assert dup_put_cc.status_code == 409
+
+    # Admin creates an employee account
+    create_emp = client.post(
+        "/api/v1/admin/accounts",
+        json={
+            "name": "Original Name",
+            "email": "employee.update@deskflow.com",
+            "password": "Password123456!",
+            "cost_center_id": cc_data["id"],
+            "role": "employee",
+            "is_eligible_for_booking": False,
+        },
+        headers=admin_headers,
+    )
+    assert create_emp.status_code == 201
+    emp_created = create_emp.json()
+
+    # Admin updates employee account
+    update_emp = client.put(
+        f"/api/v1/admin/accounts/{emp_created['id']}",
+        json={
+            "name": "Updated Name",
+            "email": "employee.modified@deskflow.com",
+            "role": "admin",
+            "is_eligible_for_booking": True,
+            "cost_center_id": cc2.json()["id"],
+        },
+        headers=admin_headers,
+    )
+    assert update_emp.status_code == 200
+    assert update_emp.json()["name"] == "Updated Name"
+    assert update_emp.json()["email"] == "employee.modified@deskflow.com"
+    assert update_emp.json()["role"] == "admin"
+    assert update_emp.json()["is_eligible_for_booking"] is True
+    assert update_emp.json()["cost_center_id"] == cc2.json()["id"]
+
+    # Updating email to an existing email returns 409
+    dup_email = client.put(
+        f"/api/v1/admin/accounts/{emp_created['id']}",
+        json={"email": "admin.super@deskflow.com"},
+        headers=admin_headers,
+    )
+    assert dup_email.status_code == 409
+
+    # Updating nonexistent account returns 404
+    assert client.put(f"/api/v1/admin/accounts/{uuid4()}", json={"name": "Ghost"}, headers=admin_headers).status_code == 404
+
+    # Updating with invalid cost_center_id returns 404
+    invalid_cc = client.put(
+        f"/api/v1/admin/accounts/{emp_created['id']}",
+        json={"cost_center_id": str(uuid4())},
+        headers=admin_headers,
+    )
+    assert invalid_cc.status_code == 404
+
+
+def test_new_endpoints_and_cors(api_client):
+    client, sessions = api_client
+
+    async def seed():
+        async with sessions() as session:
+            center = CostCenterORM(name="Ops", monthly_quota_hours=Decimal(50))
+            session.add(center)
+            await session.flush()
+            employee = EmployeeORM(
+                name="Worker",
+                email="worker@deskflow.com",
+                cost_center_id=center.id,
+                role="employee",
+                is_eligible_for_booking=True,
+            )
+            workspace = WorkspaceORM(
+                code="W-NEW-1",
+                floor="3",
+                zone="quiet",
+                type="estacao",
+                capacity=1,
+            )
+            session.add_all([employee, workspace])
+            await session.flush()
+            wl = WaitlistORM(
+                workspace_id=workspace.id,
+                employee_id=employee.id,
+                desired_start=datetime.now(UTC),
+                desired_end=datetime.now(UTC) + timedelta(minutes=30),
+            )
+            session.add(wl)
+            await session.commit()
+            return str(center.id), str(employee.id), str(workspace.id), str(wl.id)
+
+    _cost_center_id, employee_id, workspace_id, waitlist_id = asyncio.run(seed())
+    user_token = create_access_token(
+        {"sub": employee_id, "role": "employee", "employee_id": employee_id}
+    )
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+    admin_token = create_access_token({"sub": "admin", "role": "admin"})
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # 1. CORS header check
+    cors_resp = client.options(
+        "/api/v1/workspaces",
+        headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "GET"},
+    )
+    assert cors_resp.status_code == 200
+    assert cors_resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+    # 2. GET /api/v1/auth/me
+    me_resp = client.get("/api/v1/auth/me", headers=user_headers)
+    assert me_resp.status_code == 200
+    assert me_resp.json()["email"] == "worker@deskflow.com"
+    assert me_resp.json()["role"] == "employee"
+
+    # 3. GET /api/v1/workspaces/{id}
+    ws_detail = client.get(f"/api/v1/workspaces/{workspace_id}")
+    assert ws_detail.status_code == 200
+    assert ws_detail.json()["code"] == "W-NEW-1"
+
+    # 4. PUT /api/v1/admin/workspaces/{id}
+    ws_update = client.put(
+        f"/api/v1/admin/workspaces/{workspace_id}",
+        json={"zone": "focus", "resources": ["monitor_4k"]},
+        headers=admin_headers,
+    )
+    assert ws_update.status_code == 200
+    assert ws_update.json()["zone"] == "focus"
+    assert "monitor_4k" in ws_update.json()["resources"]
+
+    # 5. Admin holidays GET & DELETE
+    block_res = client.post(
+        "/api/v1/admin/holidays",
+        json={"day": "2026-12-25", "description": "Natal"},
+        headers=admin_headers,
+    )
+    assert block_res.status_code == 201
+
+    list_holidays = client.get("/api/v1/admin/holidays", headers=admin_headers)
+    assert list_holidays.status_code == 200
+    days = [h["day"] for h in list_holidays.json()["items"]]
+    assert "2026-12-25" in days
+
+    del_holiday = client.delete("/api/v1/admin/holidays/2026-12-25", headers=admin_headers)
+    assert del_holiday.status_code == 200
+
+    # 6. Waitlist GET & DELETE
+    wl_list = client.get("/api/v1/waitlist", headers=user_headers)
+    assert wl_list.status_code == 200
+    assert any(item["id"] == waitlist_id for item in wl_list.json()["items"])
+
+    wl_del = client.delete(f"/api/v1/waitlist/{waitlist_id}", headers=user_headers)
+    assert wl_del.status_code == 204

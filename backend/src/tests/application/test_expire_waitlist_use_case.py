@@ -32,6 +32,9 @@ class MockWaitlistRepo:
         self.entries.append(entry)
         return entry
 
+    async def delete(self, waitlist_id):
+        self.entries = [e for e in self.entries if e.id != waitlist_id]
+
 
 class MockWorkspaceRepo:
     def __init__(self, workspaces):
@@ -96,6 +99,9 @@ async def test_expire_waitlist_notifies_next_when_expired_timeout():
 
     expired_count = await use_case.execute()
     assert expired_count == 1
+    # Entry 1 was deleted upon expiration
+    assert len(waitlist_repo.entries) == 1
+    assert waitlist_repo.entries[0].id == entry2.id
     # Entry 2 was notified as next
     assert len(publisher.published) == 1
     assert publisher.published[0]["employee_id"] == str(entry2.employee_id)

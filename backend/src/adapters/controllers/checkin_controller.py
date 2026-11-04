@@ -1,10 +1,12 @@
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from adapters.controllers.auth import require_auth, require_booking_owner
 from adapters.events.in_memory_event_bus import event_bus
 from adapters.events.sse_publisher import sse_publisher
 from adapters.repositories.audit_log_repo_postgres import AuditLogRepositoryPostgres
@@ -66,12 +68,14 @@ async def checkin(
 @router.get("/{id}/qr", responses={200: {"content": {"image/png": {}}}})
 async def get_booking_qr_code(
     id: UUID,
+    current_user: Annotated[dict, Depends(require_auth)],
     db: AsyncSession = Depends(get_db),
 ):
     """GET /api/v1/bookings/{id}/qr — Gera imagem PNG do QR Code (UC06, RF02)."""
     booking = await BookingRepositoryPostgres(db).get_by_id(id)
     if booking is None:
         raise HTTPException(status_code=404, detail="Booking not found")
+    require_booking_owner(current_user, booking.employee_id)
     if booking.status != BookingStatus.PENDING:
         raise HTTPException(status_code=400, detail="QR Code is only available for pending bookings")
 

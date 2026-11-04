@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from domain.entities.booking import Booking
 from domain.events.event_bus import EventBus
 from domain.events.events import BookingExpired
+from domain.repositories.audit_log_repository import AuditLogRepository
 from domain.repositories.booking_repository import BookingRepository
 from domain.repositories.unit_of_work import UnitOfWork
 
@@ -15,10 +16,12 @@ class ReleaseExpiredBookingsUseCase:
         booking_repo: BookingRepository,
         unit_of_work: UnitOfWork | None = None,
         event_bus: EventBus | None = None,
+        audit_log_repo: AuditLogRepository | None = None,
     ):
         self.booking_repo = booking_repo
         self.unit_of_work = unit_of_work
         self.event_bus = event_bus
+        self.audit_log_repo = audit_log_repo
 
     async def execute(self) -> list[Booking]:
         now = datetime.now(UTC).replace(tzinfo=None)
@@ -34,6 +37,15 @@ class ReleaseExpiredBookingsUseCase:
                 expired_booking = booking.expire()
                 await self.booking_repo.save(expired_booking)
                 await self.booking_repo.delete_by_booking(booking.id)
+                if self.audit_log_repo is not None:
+                    await self.audit_log_repo.create(
+                        actor_id=None,
+                        action="expired",
+                        entity_type="booking",
+                        entity_id=str(booking.id),
+                        timestamp=now,
+                        reason="no-show tolerance exceeded",
+                    )
                 released.append(expired_booking)
 
         if self.unit_of_work is not None:

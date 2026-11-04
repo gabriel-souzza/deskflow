@@ -87,6 +87,25 @@ async def test_confirm_booking_applies_station_grace_period_and_audits():
 
 
 @pytest.mark.asyncio
+async def test_confirm_booking_allows_early_checkin_within_tolerance():
+    booking, workspace = make_booking(WorkspaceType.STATION)
+    repository = FakeBookingRepository(booking)
+    audit = FakeAuditRepository()
+    use_case = ConfirmBookingUseCase(
+        repository, FakeWorkspaceRepository(workspace), audit, FakeUnitOfWork()
+    )
+
+    # 5 minutes prior to start is allowed
+    confirmed = await use_case.execute(booking.id, booking.slot.start - timedelta(minutes=5))
+    assert confirmed.status is BookingStatus.CONFIRMED
+
+    # 15 minutes prior to start is outside early tolerance (10 min)
+    repository.booking = booking
+    with pytest.raises(CheckInError, match="outside"):
+        await use_case.execute(booking.id, booking.slot.start - timedelta(minutes=15))
+
+
+@pytest.mark.asyncio
 async def test_confirm_booking_uses_longer_meeting_room_grace_period():
     booking, workspace = make_booking(WorkspaceType.MEETING_ROOM)
     use_case = ConfirmBookingUseCase(

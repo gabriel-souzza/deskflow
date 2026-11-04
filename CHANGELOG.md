@@ -3,6 +3,29 @@
 Todas as mudanças notáveis neste projeto são documentadas aqui.
 
 ### Adicionado
+- Frontend DeskFlow em `frontend`: Next.js 16 (App Router + Turbopack + React 19 + SSR/CSR + SEO Metadata), Tailwind CSS v4 e componentes shadcn/ui
+- Camada de Domínio rica em TypeScript puro com Clean Architecture e DDD: entidades `Booking` (Invariante I4), `QuotaPeriod` (Invariante I3), `Workspace` (Invariante I2), `WaitlistEntry` (Invariante anti-sniping) e value object `TimeSlot` (Invariante I1)
+- Suíte completa de testes automatizados com Vitest e React Testing Library desenvolvida via TDD (27 testes passando)
+- Camada de integração com TanStack Query v5 configurada para offline-first, cache local e resiliência de rede
+- Páginas e fluxos completos: Consulta e Reserva de Espaços com grade de 15min (`/`), Minhas Reservas com Check-in por QR Code (`/my-bookings`), Fila de Espera com contagem regressiva anti-sniping (`/waitlist`), Dashboard de Utilização e Exportação CSV/PDF (`/reports`) e Painel Administrativo de Cotas e Contas (`/admin`)
+- Trava de prioridade da fila de espera (anti-sniping) em `CreateBookingUseCase`: durante a janela de 5 minutos de notificação da fila, apenas o colaborador notificado pode reservar a vaga liberada; terceiros recebem HTTP 409 e o registro da fila é automaticamente consumido na confirmação da reserva
+- Rota administrativa `PUT /api/v1/admin/accounts/{id}` para atualização de colaboradores (nome, email único, senha com hash PBKDF2, centro de custo, papel e elegibilidade)
+- Rota administrativa `PUT /api/v1/admin/cost-centers/{id}` para atualização de centros de custo (nome único e cota mensal em horas com validação de consumo atual)
+- Método `get_or_create` na interface `AvailabilityWindowRepository` e na criação de reservas, assegurando lock otimista (Invariante I6/I2) mesmo para reservas de dias futuros
+- Endpoint `GET /api/v1/auth/me` para recuperação de perfil do colaborador autenticado
+- Endpoints `GET /api/v1/workspaces/{id}` e `PUT /api/v1/admin/workspaces/{id}` para detalhamento e atualização de estações e salas
+- Endpoints `GET /api/v1/admin/holidays` e `DELETE /api/v1/admin/holidays/{day}` para consulta e remoção/desbloqueio de feriados
+- Endpoints `GET /api/v1/waitlist` e `DELETE /api/v1/waitlist/{id}` para consulta e cancelamento de posição na fila de espera
+- `CORSMiddleware` configurado no FastAPI em `main.py` habilitando consumo por clientes web frontend (Next.js)
+- Auditoria automática de no-shows/expiração de reservas agendadas conectando `AuditLogRepository` ao `ReleaseExpiredBookingsUseCase`
+- Tolerância de 10 minutos de antecedência para check-in em `ConfirmBookingUseCase`
+- Exposição das métricas dimensionais por andar (`by_floor`), zona (`by_zone`) e centro de custo (`cost_center_hours`) em `GET /api/v1/reports/utilization` (RF07)
+- Agregação de consumo por centro de custo em `GET /api/v1/reports/export` CSV (RF09) e paginação completa de todas as linhas no PDF (RF10)
+
+### Corrigido
+- Endpoint `GET /api/v1/bookings/{id}/qr` protegido com autenticação e validação de titularidade da reserva
+- Loop de re-notificação contínua em `ExpireWaitlistUseCase`: entradas notificadas que excedem 5 minutos são removidas com `delete()`, permitindo progressão da fila
+- Registro de auditoria do sistema com `actor_id=None` para no-shows em `audit_log_handler.py`
 - Implementação estrita da Invariante I6 (Lock Otimista): classe `RepositoryConflictError`, verificação atômica de versão em `AvailabilityWindowRepositoryPostgres.save(expected_version=...)` e tratamento com retorno 409 em `CreateBookingUseCase`
 - Endpoints `GET /api/v1/bookings` e `GET /api/v1/bookings/{id}` permitindo ao colaborador consultar suas reservas ativas e históricas com validação de posse
 - Endpoints administrativos `GET /api/v1/admin/cost-centers` e `POST /api/v1/admin/cost-centers` para gestão de centros de custo com provisionamento de cota mensal
@@ -98,6 +121,29 @@ Todas as mudanças notáveis neste projeto são documentadas aqui.
 ## [0.0.1] — 2026-09-04
 
 ### Adicionado
+- Frontend DeskFlow em `frontend`: Next.js 16 (App Router + Turbopack + React 19 + SSR/CSR + SEO Metadata), Tailwind CSS v4 e componentes shadcn/ui
+- Camada de Domínio rica em TypeScript puro com Clean Architecture e DDD: entidades `Booking` (Invariante I4), `QuotaPeriod` (Invariante I3), `Workspace` (Invariante I2), `WaitlistEntry` (Invariante anti-sniping) e value object `TimeSlot` (Invariante I1)
+- Suíte completa de testes automatizados com Vitest e React Testing Library desenvolvida via TDD (27 testes passando)
+- Camada de integração com TanStack Query v5 configurada para offline-first, cache local e resiliência de rede
+- Páginas e fluxos completos: Consulta e Reserva de Espaços com grade de 15min (`/`), Minhas Reservas com Check-in por QR Code (`/my-bookings`), Fila de Espera com contagem regressiva anti-sniping (`/waitlist`), Dashboard de Utilização e Exportação CSV/PDF (`/reports`) e Painel Administrativo de Cotas e Contas (`/admin`)
+- Trava de prioridade da fila de espera (anti-sniping) em `CreateBookingUseCase`: durante a janela de 5 minutos de notificação da fila, apenas o colaborador notificado pode reservar a vaga liberada; terceiros recebem HTTP 409 e o registro da fila é automaticamente consumido na confirmação da reserva
+- Rota administrativa `PUT /api/v1/admin/accounts/{id}` para atualização de colaboradores (nome, email único, senha com hash PBKDF2, centro de custo, papel e elegibilidade)
+- Rota administrativa `PUT /api/v1/admin/cost-centers/{id}` para atualização de centros de custo (nome único e cota mensal em horas com validação de consumo atual)
+- Método `get_or_create` na interface `AvailabilityWindowRepository` e na criação de reservas, assegurando lock otimista (Invariante I6/I2) mesmo para reservas de dias futuros
+- Endpoint `GET /api/v1/auth/me` para recuperação de perfil do colaborador autenticado
+- Endpoints `GET /api/v1/workspaces/{id}` e `PUT /api/v1/admin/workspaces/{id}` para detalhamento e atualização de estações e salas
+- Endpoints `GET /api/v1/admin/holidays` e `DELETE /api/v1/admin/holidays/{day}` para consulta e remoção/desbloqueio de feriados
+- Endpoints `GET /api/v1/waitlist` e `DELETE /api/v1/waitlist/{id}` para consulta e cancelamento de posição na fila de espera
+- `CORSMiddleware` configurado no FastAPI em `main.py` habilitando consumo por clientes web frontend (Next.js)
+- Auditoria automática de no-shows/expiração de reservas agendadas conectando `AuditLogRepository` ao `ReleaseExpiredBookingsUseCase`
+- Tolerância de 10 minutos de antecedência para check-in em `ConfirmBookingUseCase`
+- Exposição das métricas dimensionais por andar (`by_floor`), zona (`by_zone`) e centro de custo (`cost_center_hours`) em `GET /api/v1/reports/utilization` (RF07)
+- Agregação de consumo por centro de custo em `GET /api/v1/reports/export` CSV (RF09) e paginação completa de todas as linhas no PDF (RF10)
+
+### Corrigido
+- Endpoint `GET /api/v1/bookings/{id}/qr` protegido com autenticação e validação de titularidade da reserva
+- Loop de re-notificação contínua em `ExpireWaitlistUseCase`: entradas notificadas que excedem 5 minutos são removidas com `delete()`, permitindo progressão da fila
+- Registro de auditoria do sistema com `actor_id=None` para no-shows em `audit_log_handler.py`
 - Proposta comercial DeskFlow (R$ 25.000 setup + R$ 8.500/mês licença)
 - Diagnóstico operacional (P1–P6)
 - Escopo funcional e arquitetura técnica

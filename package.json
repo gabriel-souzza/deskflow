@@ -1,0 +1,15 @@
+{
+  "name": "deskflow",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm --workspace=frontend run dev",
+    "build": "npm --workspace=frontend run build",
+    "start": "npm --workspace=frontend run start",
+    "typecheck": "npm --workspace=frontend run typecheck",
+    "test": "npm --workspace=frontend run test"
+  }
+}
