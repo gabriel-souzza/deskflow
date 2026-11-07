@@ -293,28 +293,32 @@ async def seed_database() -> None:
 
         # 5. Janelas de Disponibilidade (Availability Windows) para hoje e próximos 5 dias
         all_ws = (await session.execute(select(WorkspaceORM))).scalars().all()
-        for offset in range(6):
-            target_date = today + timedelta(days=offset)
-            target_str = target_date.isoformat()
+        target_dates_str = [(today + timedelta(days=offset)).isoformat() for offset in range(6)]
+        existing_windows_result = await session.execute(
+            select(
+                AvailabilityWindowORM.workspace_id,
+                AvailabilityWindowORM.day,
+                AvailabilityWindowORM.slot_index,
+            ).where(AvailabilityWindowORM.day.in_(target_dates_str))
+        )
+        existing_windows = set(existing_windows_result.all())
+
+        new_windows = []
+        for target_str in target_dates_str:
             for ws in all_ws:
-                first_slot = await session.scalar(
-                    select(AvailabilityWindowORM).where(
-                        AvailabilityWindowORM.workspace_id == ws.id,
-                        AvailabilityWindowORM.day == target_str,
-                        AvailabilityWindowORM.slot_index == 0,
-                    )
-                )
-                if not first_slot:
-                    session.add_all(
-                        AvailabilityWindowORM(
-                            workspace_id=ws.id,
-                            day=target_str,
-                            slot_index=i,
-                            seats=ws.capacity,
-                            version_id=1,
+                for i in range(40):
+                    if (ws.id, target_str, i) not in existing_windows:
+                        new_windows.append(
+                            AvailabilityWindowORM(
+                                workspace_id=ws.id,
+                                day=target_str,
+                                slot_index=i,
+                                seats=ws.capacity,
+                                version_id=1,
+                            )
                         )
-                        for i in range(40)
-                    )
+        if new_windows:
+            session.add_all(new_windows)
         await session.flush()
         print("[OK] Janelas de disponibilidade de 15min geradas para os proximos 6 dias.")
 
