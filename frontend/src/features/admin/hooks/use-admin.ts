@@ -210,3 +210,90 @@ export function useDeleteHoliday() {
     },
   });
 }
+
+export interface AdminWorkspaceApiItem {
+  id: string;
+  code: string;
+  floor: string;
+  zone: string;
+  type: "estacao" | "sala";
+  capacity: number;
+  resources: string[];
+  is_active?: boolean;
+}
+
+export function useAdminWorkspaces() {
+  return useQuery({
+    queryKey: ["admin", "workspaces"],
+    queryFn: () => apiClient<{ items: AdminWorkspaceApiItem[] }>("/api/v1/workspaces"),
+  });
+}
+
+export function useCreateWorkspace() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: {
+      code: string;
+      floor: string;
+      zone: string;
+      type: "estacao" | "sala";
+      capacity: number;
+      resources: string[];
+    }) => {
+      return apiClient<AdminWorkspaceApiItem>("/api/v1/admin/workspaces", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "workspaces"] });
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+    },
+  });
+}
+
+export function useUpdateWorkspace() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      id,
+      ...payload
+    }: {
+      id: string;
+      code?: string;
+      floor?: string;
+      zone?: string;
+      type?: "estacao" | "sala";
+      capacity?: number;
+      resources?: string[];
+      is_active?: boolean;
+    }) => {
+      return apiClient<AdminWorkspaceApiItem>(`/api/v1/admin/workspaces/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "workspaces"] });
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+    },
+  });
+}
+
+export function useDeleteWorkspace() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      return apiClient<void>(`/api/v1/admin/workspaces/${id}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "workspaces"] });
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+    },
+  });
+}

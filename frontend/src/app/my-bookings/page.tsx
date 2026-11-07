@@ -78,20 +78,62 @@ export default function MyBookingsPage() {
     }
   };
 
-  const handlePerformCheckIn = async (bookingId: string) => {
+  const handlePerformCheckIn = async (bookingId: string, simulate: boolean = false) => {
     setFeedback(null);
     try {
       await checkinMutation.mutateAsync({
         bookingId,
         qrToken: qrTokenInput.trim(),
+        simulate,
       });
       setFeedback({ type: "success", text: "Check-in confirmado com sucesso! Presença validada." });
       setSelectedBookingForQr(null);
       setQrTokenInput("");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Token de check-in inválido ou fora do horário.";
+      let msg = err instanceof Error ? err.message : "Token de check-in inválido ou fora do horário.";
+      if (
+        msg.includes("outside the allowed time window") ||
+        msg.includes("permitido entre")
+      ) {
+        msg =
+          "O check-in só é permitido entre 10 minutos antes e 10 minutos após o início da reserva. Use o botão 'Simular Check-in (Demonstração)' para validar agora.";
+      }
       setFeedback({ type: "error", text: msg });
     }
+  };
+
+  const getCheckinWindowInfo = (booking: Booking | null) => {
+    if (!booking) return null;
+    const now = Date.now();
+    const startTime = booking.slot.start.getTime();
+    const windowStart = startTime - 10 * 60 * 1000;
+    const windowEnd = startTime + 15 * 60 * 1000;
+    const isWithinWindow = now >= windowStart && now <= windowEnd;
+    const isTooEarly = now < windowStart;
+    const isTooLate = now > windowEnd;
+
+    const startStr = booking.slot.start.toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "UTC",
+    });
+    const dateStr = booking.slot.start.toLocaleDateString("pt-BR", {
+      timeZone: "UTC",
+    });
+    const openTimeStr = new Date(windowStart).toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "UTC",
+    });
+
+    return {
+      isWithinWindow,
+      isTooEarly,
+      isTooLate,
+      startStr,
+      dateStr,
+      openTimeStr,
+    };
   };
 
   const getStatusBadge = (status: BookingStatus) => {
@@ -266,6 +308,51 @@ export default function MyBookingsPage() {
               </div>
             )}
 
+            {(() => {
+              const winInfo = getCheckinWindowInfo(selectedBookingForQr);
+              if (!winInfo) return null;
+
+              if (winInfo.isTooEarly) {
+                return (
+                  <div className="w-full rounded-lg bg-amber-50 p-3 text-xs text-amber-900 border border-amber-200 flex items-start gap-2">
+                    <Clock className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Check-in ainda não liberado</span>
+                      A reserva está agendada para <b>{winInfo.dateStr} às {winInfo.startStr}</b>. A janela oficial abrirá às <b>{winInfo.openTimeStr}</b> (10 min antes).
+                      <div className="mt-1 text-slate-500">
+                        Para testes e validação no ambiente de demonstração, você pode clicar em <b>Simular Check-in</b> abaixo.
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (winInfo.isTooLate) {
+                return (
+                  <div className="w-full rounded-lg bg-red-50 p-3 text-xs text-red-900 border border-red-200 flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Janela de Check-in Expirada</span>
+                      O horário de tolerância desta reserva encerrou.
+                      <div className="mt-1 text-slate-500">
+                        Você pode simular a confirmação para fins de teste no ambiente de demonstração.
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="w-full rounded-lg bg-emerald-50 p-3 text-xs text-emerald-900 border border-emerald-200 flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">Janela de Check-in Aberta!</span>
+                    Você está no horário permitido para validar sua presença na estação/sala.
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="w-full space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-semibold text-slate-700 block">
@@ -304,14 +391,30 @@ export default function MyBookingsPage() {
                   onChange={(e) => setQrTokenInput(e.target.value)}
                   className="font-mono text-xs"
                 />
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
                 <Button
                   onClick={() =>
                     selectedBookingForQr &&
-                    handlePerformCheckIn(selectedBookingForQr.id)
+                    handlePerformCheckIn(selectedBookingForQr.id, false)
                   }
                   disabled={!qrTokenInput.trim() || checkinMutation.isPending}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs"
                 >
-                  Confirmar
+                  Confirmar Check-in
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    selectedBookingForQr &&
+                    handlePerformCheckIn(selectedBookingForQr.id, true)
+                  }
+                  disabled={!qrTokenInput.trim() || checkinMutation.isPending}
+                  className="border-blue-300 text-blue-700 hover:bg-blue-50 text-xs font-semibold"
+                  title="Valida o check-in imediatamente para testes sem esperar o horário da reserva"
+                >
+                  Simular Check-in (Demonstração)
                 </Button>
               </div>
             </div>

@@ -29,16 +29,20 @@ export interface UtilizationReportData extends Partial<ReportSummaryMetrics> {
   by_floor?: Record<string, number | DimensionOccupancy>;
   by_zone?: Record<string, number | DimensionOccupancy>;
   cost_center_hours?: Record<string, number>;
+  cost_center_names?: Record<string, string>;
 }
 
-export function useUtilizationReport(day: string) {
+export function useUtilizationReport(startDate: string, endDate?: string) {
   const token = typeof window !== "undefined" ? getToken() : null;
+  const end = endDate || startDate;
 
   return useQuery({
-    queryKey: ["reports", "utilization", day, token],
+    queryKey: ["reports", "utilization", startDate, end, token],
     queryFn: () =>
-      apiClient<UtilizationReportData>(`/api/v1/reports/utilization?day=${day}`),
-    enabled: !!day && !!token,
+      apiClient<UtilizationReportData>(
+        `/api/v1/reports/utilization?start_date=${startDate}&end_date=${end}`
+      ),
+    enabled: !!startDate && !!token,
   });
 }
 

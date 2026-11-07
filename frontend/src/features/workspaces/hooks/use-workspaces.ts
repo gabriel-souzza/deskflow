@@ -17,7 +17,7 @@ interface WorkspaceApiItem {
   zone: string;
   type: string;
   capacity: number;
-  resources?: Record<string, unknown>;
+  resources?: string[] | Record<string, unknown>;
   is_active?: boolean;
 }
 

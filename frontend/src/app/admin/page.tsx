@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   Building,
+  Building2,
   Calendar,
   CheckCircle2,
+  Edit2,
   Lock,
   PieChart,
   Plus,
@@ -29,29 +31,57 @@ import {
 import { Input } from "@/components/ui/input";
 import {
   AccountApiItem,
+  AdminWorkspaceApiItem,
   CostCenterApiItem,
   useAdminAccounts,
   useAdminCostCenters,
   useAdminHolidays,
   useAdminQuotas,
+  useAdminWorkspaces,
   useCreateAccount,
   useCreateCostCenter,
   useCreateHoliday,
+  useCreateWorkspace,
   useDeleteAccount,
   useDeleteHoliday,
+  useDeleteWorkspace,
   useUpdateAccount,
   useUpdateCostCenter,
+  useUpdateWorkspace,
 } from "@/features/admin/hooks/use-admin";
 import { useCurrentUser } from "@/features/auth/hooks/use-auth";
 
+const AVAILABLE_RESOURCES = [
+  { id: "monitor_duplo", label: "Monitor Duplo" },
+  { id: "tomada_adicional", label: "Tomada Extra" },
+  { id: "usb_c", label: "Dock USB-C" },
+  { id: "videoconferencia", label: "Videoconferência" },
+  { id: "tv_4k", label: "TV 4K" },
+  { id: "whiteboard", label: "Quadro Branco" },
+];
+
+const RESOURCE_LABELS: Record<string, string> = {
+  monitor_duplo: "Monitor Duplo",
+  tomada_adicional: "Tomada",
+  usb_c: "USB-C",
+  videoconferencia: "Videoconferência",
+  tv_4k: "TV 4K",
+  whiteboard: "Quadro Branco",
+};
+
 export default function AdminPage() {
   const { data: user, isLoading: userLoading } = useCurrentUser();
-  const [activeTab, setActiveTab] = useState<"quotas" | "accounts" | "holidays">("quotas");
+  const [activeTab, setActiveTab] = useState<"quotas" | "workspaces" | "accounts" | "holidays">("quotas");
 
   const { data: costCenters } = useAdminCostCenters();
   const { data: quotas } = useAdminQuotas();
   const updateCostCenterMutation = useUpdateCostCenter();
   const createCostCenterMutation = useCreateCostCenter();
+
+  const { data: workspaces, isLoading: workspacesLoading } = useAdminWorkspaces();
+  const createWorkspaceMutation = useCreateWorkspace();
+  const updateWorkspaceMutation = useUpdateWorkspace();
+  const deleteWorkspaceMutation = useDeleteWorkspace();
 
   const { data: accounts } = useAdminAccounts();
   const updateAccountMutation = useUpdateAccount();
@@ -96,6 +126,25 @@ export default function AdminPage() {
   // Criação de Feriado
   const [newHolidayDay, setNewHolidayDay] = useState("");
   const [newHolidayDesc, setNewHolidayDesc] = useState("");
+
+  // Gestão de Espaços
+  const [isCreatingWs, setIsCreatingWs] = useState(false);
+  const [newWsCode, setNewWsCode] = useState("");
+  const [newWsFloor, setNewWsFloor] = useState("");
+  const [newWsZone, setNewWsZone] = useState("");
+  const [newWsType, setNewWsType] = useState<"estacao" | "sala">("estacao");
+  const [newWsCapacity, setNewWsCapacity] = useState(1);
+  const [newWsResources, setNewWsResources] = useState<string[]>([]);
+
+  const [editingWs, setEditingWs] = useState<AdminWorkspaceApiItem | null>(null);
+  const [editWsCode, setEditWsCode] = useState("");
+  const [editWsFloor, setEditWsFloor] = useState("");
+  const [editWsZone, setEditWsZone] = useState("");
+  const [editWsType, setEditWsType] = useState<"estacao" | "sala">("estacao");
+  const [editWsCapacity, setEditWsCapacity] = useState(1);
+  const [editWsResources, setEditWsResources] = useState<string[]>([]);
+
+  const [wsToDelete, setWsToDelete] = useState<AdminWorkspaceApiItem | null>(null);
 
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -272,6 +321,119 @@ export default function AdminPage() {
     }
   };
 
+  const handleCreateWorkspace = async () => {
+    if (!newWsCode.trim()) {
+      setFeedback({ type: "error", text: "Informe o código do espaço (ex: EST-101 ou SALA-201)." });
+      return;
+    }
+    if (!newWsFloor.trim()) {
+      setFeedback({ type: "error", text: "Informe o andar do espaço (ex: 1º Andar)." });
+      return;
+    }
+    if (!newWsZone.trim()) {
+      setFeedback({ type: "error", text: "Informe a zona ou ala do espaço (ex: Ala Norte)." });
+      return;
+    }
+    const capacity = newWsType === "estacao" ? 1 : Math.max(1, newWsCapacity);
+
+    setFeedback(null);
+    try {
+      await createWorkspaceMutation.mutateAsync({
+        code: newWsCode.trim().toUpperCase(),
+        floor: newWsFloor.trim(),
+        zone: newWsZone.trim(),
+        type: newWsType,
+        capacity,
+        resources: newWsResources,
+      });
+      setFeedback({
+        type: "success",
+        text: `Espaço ${newWsCode.trim().toUpperCase()} cadastrado com sucesso!`,
+      });
+      setIsCreatingWs(false);
+      setNewWsCode("");
+      setNewWsFloor("");
+      setNewWsZone("");
+      setNewWsType("estacao");
+      setNewWsCapacity(1);
+      setNewWsResources([]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Falha ao criar espaço.";
+      setFeedback({ type: "error", text: msg });
+    }
+  };
+
+  const handleOpenEditWs = (ws: AdminWorkspaceApiItem) => {
+    setEditingWs(ws);
+    setEditWsCode(ws.code);
+    setEditWsFloor(ws.floor);
+    setEditWsZone(ws.zone);
+    setEditWsType(ws.type);
+    setEditWsCapacity(ws.capacity);
+    setEditWsResources(Array.isArray(ws.resources) ? ws.resources : []);
+  };
+
+  const handleSaveWorkspace = async () => {
+    if (!editingWs) return;
+    if (!editWsCode.trim()) {
+      setFeedback({ type: "error", text: "Informe o código do espaço." });
+      return;
+    }
+    const capacity = editWsType === "estacao" ? 1 : Math.max(1, editWsCapacity);
+
+    setFeedback(null);
+    try {
+      await updateWorkspaceMutation.mutateAsync({
+        id: editingWs.id,
+        code: editWsCode.trim().toUpperCase(),
+        floor: editWsFloor.trim(),
+        zone: editWsZone.trim(),
+        type: editWsType,
+        capacity,
+        resources: editWsResources,
+      });
+      setFeedback({
+        type: "success",
+        text: `Espaço ${editWsCode.trim().toUpperCase()} atualizado com sucesso!`,
+      });
+      setEditingWs(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Falha ao atualizar espaço.";
+      setFeedback({ type: "error", text: msg });
+    }
+  };
+
+  const handleDeleteWorkspace = async () => {
+    if (!wsToDelete) return;
+    setFeedback(null);
+    try {
+      await deleteWorkspaceMutation.mutateAsync(wsToDelete.id);
+      setFeedback({ type: "success", text: `Espaço ${wsToDelete.code} excluído com sucesso!` });
+      setWsToDelete(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Falha ao excluir espaço.";
+      setFeedback({ type: "error", text: msg });
+    }
+  };
+
+  const criticalQuotas = (quotas?.items ?? [])
+    .map((q) => {
+      const cc = costCenters?.items?.find((c) => c.id === q.cost_center_id);
+      const total = cc?.monthly_quota_hours ?? q.monthly_quota_hours ?? 0;
+      const used = q.used_hours;
+      const pct = total > 0 ? (used / total) * 100 : 0;
+      return {
+        ...q,
+        name: cc?.name ?? `Centro de Custo`,
+        total,
+        used,
+        pct,
+        isCritical: pct >= 95,
+        isWarning: pct >= 80 && pct < 95,
+      };
+    })
+    .filter((item) => item.isCritical || item.isWarning);
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="border-b border-slate-200 pb-5">
@@ -280,7 +442,7 @@ export default function AdminPage() {
           Painel de Administração
         </h1>
         <p className="text-sm font-medium text-slate-600 mt-1">
-          Configuração de cotas por centro de custo, criação e gestão de contas de colaboradores e controle de feriados.
+          Configuração de cotas por centro de custo, gestão de espaços e salas, contas de colaboradores e controle de feriados.
         </p>
       </div>
 
@@ -301,10 +463,10 @@ export default function AdminPage() {
         </div>
       )}
 
-      <div className="mt-6 flex border-b border-slate-200 space-x-6">
+      <div className="mt-6 flex border-b border-slate-200 space-x-6 overflow-x-auto">
         <button
           onClick={() => setActiveTab("quotas")}
-          className={`pb-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+          className={`pb-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${
             activeTab === "quotas"
               ? "border-blue-600 text-blue-600"
               : "border-transparent text-slate-500 hover:text-slate-800"
@@ -315,8 +477,20 @@ export default function AdminPage() {
         </button>
 
         <button
+          onClick={() => setActiveTab("workspaces")}
+          className={`pb-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${
+            activeTab === "workspaces"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <Building2 className="h-4 w-4" />
+          Espaços & Estações
+        </button>
+
+        <button
           onClick={() => setActiveTab("accounts")}
-          className={`pb-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+          className={`pb-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${
             activeTab === "accounts"
               ? "border-blue-600 text-blue-600"
               : "border-transparent text-slate-500 hover:text-slate-800"
@@ -328,7 +502,7 @@ export default function AdminPage() {
 
         <button
           onClick={() => setActiveTab("holidays")}
-          className={`pb-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+          className={`pb-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${
             activeTab === "holidays"
               ? "border-blue-600 text-blue-600"
               : "border-transparent text-slate-500 hover:text-slate-800"
@@ -357,6 +531,63 @@ export default function AdminPage() {
               Novo Centro de Custo
             </Button>
           </div>
+
+          {criticalQuotas.length > 0 && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50/90 p-4 shadow-xs">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-2 flex-1">
+                  <div>
+                    <h3 className="text-sm font-bold text-amber-950">
+                      Alerta de Cota Crítica — Acompanhamento de Rateio Corporativo
+                    </h3>
+                    <p className="text-xs text-amber-800 mt-0.5">
+                      Centros de custo com alto consumo mensal de horas. Em 80% o gestor é alertado; ao atingir 95%, novas reservas são bloqueadas preventivamente.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    {criticalQuotas.map((cq) => (
+                      <div
+                        key={cq.cost_center_id}
+                        className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg p-2.5 text-xs border ${
+                          cq.isCritical
+                            ? "bg-red-50 text-red-950 border-red-200"
+                            : "bg-amber-100/70 text-amber-950 border-amber-300"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-slate-900">{cq.name}</span>
+                          <span className="text-slate-700">
+                            {cq.used}h de {cq.total}h utilizadas ({cq.pct.toFixed(1)}%)
+                          </span>
+                          <Badge
+                            variant={cq.isCritical ? "destructive" : "warning"}
+                            className="text-[10px] py-0 px-1.5 font-bold"
+                          >
+                            {cq.isCritical ? "CRÍTICO 95%" : "ALERTA 80%"}
+                          </Badge>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs bg-white hover:bg-slate-50 border-slate-300 font-semibold shrink-0"
+                          onClick={() => {
+                            const cc = costCenters?.items?.find((c) => c.id === cq.cost_center_id);
+                            if (cc) {
+                              setEditingCc(cc);
+                              setEditingCcHours(cc.monthly_quota_hours);
+                            }
+                          }}
+                        >
+                          Ajustar Cota
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {costCenters?.items?.map((cc) => {
@@ -433,6 +664,120 @@ export default function AdminPage() {
                 </Card>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "workspaces" && (
+        <div className="mt-6 space-y-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Espaços & Estações de Trabalho</h2>
+              <p className="text-xs text-slate-600">
+                Cadastre, configure recursos (monitores, tomadas, videoconferência) e gerencie a capacidade das estações e salas.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => {
+                setNewWsCode("");
+                setNewWsFloor("");
+                setNewWsZone("");
+                setNewWsType("estacao");
+                setNewWsCapacity(1);
+                setNewWsResources([]);
+                setIsCreatingWs(true);
+              }}
+              className="gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs"
+            >
+              <Plus className="h-4 w-4" />
+              Novo Espaço
+            </Button>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-xs">
+            {workspacesLoading ? (
+              <div className="p-8 text-center text-sm text-slate-500">Carregando espaços...</div>
+            ) : !workspaces?.items || workspaces.items.length === 0 ? (
+              <div className="p-8 text-center text-sm text-slate-500">Nenhum espaço cadastrado ainda.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm text-slate-700">
+                  <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-600 border-b border-slate-200">
+                    <tr>
+                      <th className="px-4 py-3">Código</th>
+                      <th className="px-4 py-3">Tipo</th>
+                      <th className="px-4 py-3">Localização</th>
+                      <th className="px-4 py-3">Capacidade</th>
+                      <th className="px-4 py-3">Recursos Disponíveis</th>
+                      <th className="px-4 py-3 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {workspaces.items.map((ws) => {
+                      const wsResList = Array.isArray(ws.resources) ? ws.resources : [];
+                      return (
+                        <tr key={ws.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="px-4 py-3 font-mono font-bold text-slate-900">
+                            {ws.code}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant={ws.type === "sala" ? "default" : "secondary"}>
+                              {ws.type === "sala" ? "Sala de Reunião" : "Estação"}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3 text-slate-700 font-medium">
+                            {ws.floor} • {ws.zone}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700 font-medium">
+                            {ws.capacity} {ws.capacity === 1 ? "pessoa" : "pessoas"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {wsResList.length > 0 ? (
+                                wsResList.map((resKey) => (
+                                  <span
+                                    key={resKey}
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200"
+                                  >
+                                    {RESOURCE_LABELS[resKey] || resKey}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-slate-400">Padrão</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleOpenEditWs(ws)}
+                                className="text-xs font-medium text-slate-600 hover:text-slate-900 h-8 px-2"
+                                title="Editar espaço"
+                              >
+                                <Edit2 className="h-4 w-4 mr-1 text-slate-500" />
+                                Editar
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setWsToDelete(ws)}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8 w-8 p-0"
+                                title="Excluir espaço"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -817,6 +1162,291 @@ export default function AdminPage() {
               className="bg-red-600 hover:bg-red-700 text-white font-semibold"
             >
               {deleteAccountMutation.isPending ? "Excluindo..." : "Confirmar Exclusão"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Criar Novo Espaço */}
+      <Dialog open={isCreatingWs} onOpenChange={setIsCreatingWs}>
+        <DialogContent className="sm:max-w-md bg-white border border-slate-200 shadow-xl text-slate-900">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold text-slate-900">
+              <Building2 className="h-5 w-5 text-blue-600" />
+              <span>Novo Espaço / Estação</span>
+            </DialogTitle>
+            <DialogDescription className="text-sm font-medium text-slate-600">
+              Cadastre uma nova estação individual ou sala de reunião com seus recursos.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3.5 py-2">
+            <div>
+              <label className="text-xs font-bold text-slate-800 block mb-1">
+                Código Identificador (ex: EST-105 ou SALA-201)
+              </label>
+              <Input
+                type="text"
+                placeholder="Ex: EST-105"
+                value={newWsCode}
+                onChange={(e) => setNewWsCode(e.target.value.toUpperCase())}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-slate-800 block mb-1">Tipo</label>
+                <select
+                  value={newWsType}
+                  onChange={(e) => {
+                    const nextType = e.target.value as "estacao" | "sala";
+                    setNewWsType(nextType);
+                    if (nextType === "estacao") setNewWsCapacity(1);
+                  }}
+                  className="w-full rounded-md border border-slate-300 bg-white p-2 text-xs font-medium text-slate-900 shadow-xs"
+                >
+                  <option value="estacao">Estação Individual</option>
+                  <option value="sala">Sala de Reunião</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-800 block mb-1">Capacidade</label>
+                <Input
+                  type="number"
+                  min={1}
+                  disabled={newWsType === "estacao"}
+                  value={newWsType === "estacao" ? 1 : newWsCapacity}
+                  onChange={(e) => setNewWsCapacity(Number(e.target.value))}
+                  className="text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-slate-800 block mb-1">Andar / Piso</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 1º Andar"
+                  value={newWsFloor}
+                  onChange={(e) => setNewWsFloor(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-800 block mb-1">Zona / Setor</label>
+                <Input
+                  type="text"
+                  placeholder="Ex: Ala Norte"
+                  value={newWsZone}
+                  onChange={(e) => setNewWsZone(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-800 block mb-1.5">
+                Recursos e Equipamentos Disponíveis
+              </label>
+              <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                {AVAILABLE_RESOURCES.map((res) => {
+                  const checked = newWsResources.includes(res.id);
+                  return (
+                    <label
+                      key={res.id}
+                      className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setNewWsResources([...newWsResources, res.id]);
+                          } else {
+                            setNewWsResources(newWsResources.filter((r) => r !== res.id));
+                          }
+                        }}
+                        className="rounded border-slate-300 h-3.5 w-3.5 text-blue-600"
+                      />
+                      <span>{res.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-100 pt-3">
+            <Button variant="outline" onClick={() => setIsCreatingWs(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleCreateWorkspace}
+              disabled={createWorkspaceMutation.isPending}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+            >
+              {createWorkspaceMutation.isPending ? "Cadastrando..." : "Cadastrar Espaço"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Editar Espaço */}
+      <Dialog open={!!editingWs} onOpenChange={(open) => !open && setEditingWs(null)}>
+        <DialogContent className="sm:max-w-md bg-white border border-slate-200 shadow-xl text-slate-900">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold text-slate-900">
+              <Building2 className="h-5 w-5 text-blue-600" />
+              <span>Editar Espaço ({editingWs?.code})</span>
+            </DialogTitle>
+            <DialogDescription className="text-sm font-medium text-slate-600">
+              Atualize informações de identificação, capacidade e recursos do espaço.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3.5 py-2">
+            <div>
+              <label className="text-xs font-bold text-slate-800 block mb-1">
+                Código Identificador
+              </label>
+              <Input
+                type="text"
+                value={editWsCode}
+                onChange={(e) => setEditWsCode(e.target.value.toUpperCase())}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-slate-800 block mb-1">Tipo</label>
+                <select
+                  value={editWsType}
+                  onChange={(e) => {
+                    const nextType = e.target.value as "estacao" | "sala";
+                    setEditWsType(nextType);
+                    if (nextType === "estacao") setEditWsCapacity(1);
+                  }}
+                  className="w-full rounded-md border border-slate-300 bg-white p-2 text-xs font-medium text-slate-900 shadow-xs"
+                >
+                  <option value="estacao">Estação Individual</option>
+                  <option value="sala">Sala de Reunião</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-800 block mb-1">Capacidade</label>
+                <Input
+                  type="number"
+                  min={1}
+                  disabled={editWsType === "estacao"}
+                  value={editWsType === "estacao" ? 1 : editWsCapacity}
+                  onChange={(e) => setEditWsCapacity(Number(e.target.value))}
+                  className="text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-slate-800 block mb-1">Andar / Piso</label>
+                <Input
+                  type="text"
+                  value={editWsFloor}
+                  onChange={(e) => setEditWsFloor(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-800 block mb-1">Zona / Setor</label>
+                <Input
+                  type="text"
+                  value={editWsZone}
+                  onChange={(e) => setEditWsZone(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-800 block mb-1.5">
+                Recursos e Equipamentos Disponíveis
+              </label>
+              <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                {AVAILABLE_RESOURCES.map((res) => {
+                  const checked = editWsResources.includes(res.id);
+                  return (
+                    <label
+                      key={res.id}
+                      className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEditWsResources([...editWsResources, res.id]);
+                          } else {
+                            setEditWsResources(editWsResources.filter((r) => r !== res.id));
+                          }
+                        }}
+                        className="rounded border-slate-300 h-3.5 w-3.5 text-blue-600"
+                      />
+                      <span>{res.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-100 pt-3">
+            <Button variant="outline" onClick={() => setEditingWs(null)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSaveWorkspace}
+              disabled={updateWorkspaceMutation.isPending}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+            >
+              {updateWorkspaceMutation.isPending ? "Salvando..." : "Salvar Alterações"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Confirmar Exclusão de Espaço */}
+      <Dialog open={!!wsToDelete} onOpenChange={(open) => !open && setWsToDelete(null)}>
+        <DialogContent className="sm:max-w-md bg-white border border-slate-200 shadow-xl text-slate-900">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold text-red-600">
+              <Trash2 className="h-5 w-5" />
+              <span>Excluir Espaço</span>
+            </DialogTitle>
+            <DialogDescription className="text-sm font-medium text-slate-600 pt-2 space-y-2">
+              <p>
+                Tem certeza que deseja excluir o espaço{" "}
+                <strong className="text-slate-900">{wsToDelete?.code}</strong> ({wsToDelete?.floor} • {wsToDelete?.zone})?
+              </p>
+              <p className="text-xs bg-red-50 text-red-800 p-2.5 rounded-lg border border-red-200">
+                Atenção: Espaços com reservas ativas ou agendadas não podem ser excluídos. Cancele as reservas antes se desejar desativar o espaço permanentemente.
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-100 pt-3">
+            <Button
+              variant="outline"
+              onClick={() => setWsToDelete(null)}
+              disabled={deleteWorkspaceMutation.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleDeleteWorkspace}
+              disabled={deleteWorkspaceMutation.isPending}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold"
+            >
+              {deleteWorkspaceMutation.isPending ? "Excluindo..." : "Confirmar Exclusão"}
             </Button>
           </DialogFooter>
         </DialogContent>

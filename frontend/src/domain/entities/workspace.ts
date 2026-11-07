@@ -15,7 +15,7 @@ export const WorkspaceSchema = z.object({
   zone: z.string().min(1),
   type: z.nativeEnum(WorkspaceType),
   capacity: z.number().int().positive(),
-  resources: z.record(z.unknown()).default({}),
+  resources: z.union([z.array(z.string()), z.record(z.unknown())]).default([]),
   isActive: z.boolean().default(true),
 });
 
@@ -28,7 +28,7 @@ export class Workspace {
   readonly zone: string;
   readonly type: WorkspaceType;
   readonly capacity: number;
-  readonly resources: Record<string, unknown>;
+  readonly resources: string[] | Record<string, unknown>;
   readonly isActive: boolean;
 
   private constructor(params: {
@@ -38,7 +38,7 @@ export class Workspace {
     zone: string;
     type: WorkspaceType;
     capacity: number;
-    resources?: Record<string, unknown>;
+    resources?: string[] | Record<string, unknown>;
     isActive?: boolean;
   }) {
     this.validate(params.type, params.capacity);
@@ -48,7 +48,7 @@ export class Workspace {
     this.zone = params.zone;
     this.type = params.type;
     this.capacity = params.capacity;
-    this.resources = params.resources ?? {};
+    this.resources = params.resources ?? [];
     this.isActive = params.isActive ?? true;
   }
 
@@ -59,10 +59,20 @@ export class Workspace {
     zone: string;
     type: WorkspaceType;
     capacity: number;
-    resources?: Record<string, unknown>;
+    resources?: string[] | Record<string, unknown>;
     isActive?: boolean;
   }): Workspace {
     return new Workspace(params);
+  }
+
+  getResourceList(): string[] {
+    if (Array.isArray(this.resources)) {
+      return this.resources;
+    }
+    if (this.resources && typeof this.resources === "object") {
+      return Object.keys(this.resources);
+    }
+    return [];
   }
 
   private validate(type: WorkspaceType, capacity: number): void {

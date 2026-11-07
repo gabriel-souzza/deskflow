@@ -80,7 +80,14 @@ async def create_booking(
     try:
         slot = TimeSlot(start=start, end=end)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        msg = str(exc)
+        if "before" in msg:
+            detail = "O horário de término deve ser posterior ao horário de início."
+        elif "15-minute" in msg:
+            detail = "Os horários devem seguir a grade de 15 minutos."
+        else:
+            detail = msg
+        raise HTTPException(status_code=400, detail=detail) from exc
 
     use_case = CreateBookingUseCase(
         booking_repo=BookingRepositoryPostgres(db),

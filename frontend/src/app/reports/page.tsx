@@ -24,12 +24,19 @@ import {
   useUtilizationReport,
 } from "@/features/reports/hooks/use-reports";
 
+function getTodayLocalDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function ReportsPage() {
   const { data: user, isLoading: userLoading } = useCurrentUser();
   const [mounted, setMounted] = useState(false);
-  const [selectedDay, setSelectedDay] = useState(() => {
-    return new Date().toISOString().split("T")[0]!;
-  });
+  const [startDate, setStartDate] = useState(getTodayLocalDate);
+  const [endDate, setEndDate] = useState(getTodayLocalDate);
 
   useEffect(() => {
     setMounted(true);
@@ -40,10 +47,34 @@ export default function ReportsPage() {
     isLoading: reportLoading,
     error,
     refetch,
-  } = useUtilizationReport(selectedDay);
+  } = useUtilizationReport(startDate, endDate);
 
   const handleExport = (format: "csv" | "pdf") => {
-    downloadReport(selectedDay, selectedDay, format);
+    downloadReport(startDate, endDate, format);
+  };
+
+  const setPresetToday = () => {
+    const today = getTodayLocalDate();
+    setStartDate(today);
+    setEndDate(today);
+  };
+
+  const setPreset7Days = () => {
+    const now = new Date();
+    const d = new Date(now);
+    d.setDate(d.getDate() - 6);
+    const startStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    setStartDate(startStr);
+    setEndDate(getTodayLocalDate());
+  };
+
+  const setPresetMonth = () => {
+    const now = new Date();
+    const startStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const lastDayDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const endStr = `${lastDayDate.getFullYear()}-${String(lastDayDate.getMonth() + 1).padStart(2, "0")}-${String(lastDayDate.getDate()).padStart(2, "0")}`;
+    setStartDate(startStr);
+    setEndDate(endStr);
   };
 
   const parseOccupancyHours = (
@@ -107,13 +138,47 @@ export default function ReportsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-md shadow-xs">
+          {/* Presets */}
+          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600">
+            <button
+              type="button"
+              onClick={setPresetToday}
+              className={`px-2.5 py-1 rounded-md transition-colors ${startDate === endDate && startDate === getTodayLocalDate() ? "bg-white text-slate-900 shadow-xs" : "hover:text-slate-900"}`}
+            >
+              Hoje
+            </button>
+            <button
+              type="button"
+              onClick={setPreset7Days}
+              className="px-2.5 py-1 rounded-md hover:text-slate-900 transition-colors"
+            >
+              7 dias
+            </button>
+            <button
+              type="button"
+              onClick={setPresetMonth}
+              className="px-2.5 py-1 rounded-md hover:text-slate-900 transition-colors"
+            >
+              Mês
+            </button>
+          </div>
+
+          {/* Date range pickers */}
+          <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-md shadow-xs text-xs">
             <Calendar className="h-4 w-4 text-slate-400" />
+            <span className="text-slate-400">De</span>
             <input
               type="date"
-              value={selectedDay}
-              onChange={(e) => setSelectedDay(e.target.value)}
-              className="text-sm outline-none bg-transparent"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="outline-none bg-transparent"
+            />
+            <span className="text-slate-400">Até</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="outline-none bg-transparent"
             />
           </div>
 
@@ -282,16 +347,21 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {costCenterEntries.map(([ccId, hours]) => (
-                    <div key={ccId} className="flex items-center justify-between text-sm">
-                      <span className="text-slate-600 text-xs truncate max-w-[150px]">
-                        {ccId.slice(0, 13)}...
-                      </span>
-                      <span className="font-semibold text-slate-900 font-mono">{hours}h</span>
-                    </div>
-                  ))}
+                  {costCenterEntries.map(([ccId, hours]) => {
+                    const name =
+                      report?.cost_center_names?.[ccId] ||
+                      (ccId.length > 13 ? `${ccId.slice(0, 13)}...` : ccId);
+                    return (
+                      <div key={ccId} className="flex items-center justify-between text-sm">
+                        <span className="text-slate-600 text-xs truncate max-w-[180px]" title={name}>
+                          {name}
+                        </span>
+                        <span className="font-semibold text-slate-900 font-mono">{hours}h</span>
+                      </div>
+                    );
+                  })}
                   {costCenterEntries.length === 0 && (
-                    <span className="text-xs text-slate-400">Sem registros para o dia.</span>
+                    <span className="text-xs text-slate-400">Sem registros para o período.</span>
                   )}
                 </div>
               </CardContent>

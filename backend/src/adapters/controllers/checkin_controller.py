@@ -28,6 +28,7 @@ router = APIRouter(prefix="/api/v1/bookings", tags=["checkin"])
 
 class CheckinRequest(BaseModel):
     qr_token: str | None = None
+    simulate: bool = False
 
 
 @router.post("/{id}/checkin", status_code=200)
@@ -35,10 +36,12 @@ async def checkin(
     id: UUID,
     payload: CheckinRequest | None = None,
     qr_token: str | None = Query(default=None),
+    simulate: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ):
     """POST /api/v1/bookings/{id}/checkin — Confirmação via QR."""
     token = (payload.qr_token if payload and payload.qr_token else None) or qr_token
+    is_simulation = (payload.simulate if payload else False) or simulate
     if not token:
         raise HTTPException(status_code=400, detail="qr_token is required")
     try:
@@ -48,21 +51,35 @@ async def checkin(
     if claims.get("sub") != str(id) or claims.get("purpose") != "booking-checkin":
         raise HTTPException(status_code=401, detail="Token does not belong to this booking")
 
+    booking_repo = BookingRepositoryPostgres(db)
+    target_booking = await booking_repo.get_by_id(id)
+    if target_booking is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    checkin_time = target_booking.slot.start if is_simulation else datetime.now(UTC)
+
     try:
         await ConfirmBookingUseCase(
-            BookingRepositoryPostgres(db),
+            booking_repo,
             WorkspaceRepositoryPostgres(db),
             AuditLogRepositoryPostgres(db),
             SqlAlchemyUnitOfWork(db),
             event_bus=event_bus,
-        ).execute(id, datetime.now(UTC))
+        ).execute(id, checkin_time)
     except BookingNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CheckInError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        msg = str(exc)
+        if "outside the allowed time window" in msg:
+            detail = "O check-in só é permitido entre 10 minutos antes e 10 minutos após o início da reserva."
+        elif "Only pending bookings" in msg:
+            detail = "Apenas reservas pendentes podem realizar check-in."
+        else:
+            detail = msg
+        raise HTTPException(status_code=409, detail=detail) from exc
 
     await sse_publisher.publish({"type": "booking.confirmed", "booking_id": str(id)})
-    return {"booking_id": str(id), "status": "CONFIRMED", "message": "Check-in validated"}
+    return {"booking_id": str(id), "status": "CONFIRMED", "message": "Check-in validado com sucesso"}
 
 
 @router.get("/{id}/qr", responses={200: {"content": {"image/png": {}}}})

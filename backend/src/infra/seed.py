@@ -368,6 +368,90 @@ async def seed_database() -> None:
             )
             print("[OK] Reserva de teste canônica PENDING criada para A-101.")
 
+        # 8. Reservas de Demonstração Ativas para Hoje e Amanhã
+        today_start_dt = datetime.combine(today, time.min)
+        today_end_dt = datetime.combine(today, time.max)
+        existing_today_booking = await session.scalar(
+            select(BookingORM).where(
+                BookingORM.slot_start >= today_start_dt,
+                BookingORM.slot_start <= today_end_dt,
+            )
+        )
+        if not existing_today_booking:
+            today_booking_id = uuid.UUID("a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c8d")
+            existing_today_b = await session.scalar(
+                select(BookingORM).where(BookingORM.id == today_booking_id)
+            )
+            if not existing_today_b:
+                t_start = datetime.combine(today, time(10, 0))
+                t_end = t_start + timedelta(hours=2)
+                today_booking = BookingORM(
+                    id=today_booking_id,
+                    workspace_id=ws_a101.id,
+                    employee_id=emp_maria.id,
+                    cost_center_id=emp_maria.cost_center_id,
+                    slot_start=t_start,
+                    slot_end=t_end,
+                    status="CONFIRMED",
+                )
+                session.add(today_booking)
+                await session.flush()
+                day_str = today.isoformat()
+                start_idx = (10 * 60 - 8 * 60) // 15
+                session.add_all(
+                    BookingWindowORM(
+                        booking_id=today_booking_id,
+                        workspace_id=ws_a101.id,
+                        day=day_str,
+                        slot_index=start_idx + i,
+                    )
+                    for i in range(8)
+                )
+                print("[OK] Reserva confirmada de demonstracao para hoje criada para Maria Silva.")
+
+        tomorrow = today + timedelta(days=1)
+        tomorrow_start_dt = datetime.combine(tomorrow, time.min)
+        tomorrow_end_dt = datetime.combine(tomorrow, time.max)
+        existing_tomorrow_booking = await session.scalar(
+            select(BookingORM).where(
+                BookingORM.slot_start >= tomorrow_start_dt,
+                BookingORM.slot_start <= tomorrow_end_dt,
+            )
+        )
+        if not existing_tomorrow_booking:
+            tomorrow_booking_id = uuid.UUID("f1e2d3c4-b5a6-4f7e-8d9c-0b1a2c3d4e5f")
+            existing_tomorrow_b = await session.scalar(
+                select(BookingORM).where(BookingORM.id == tomorrow_booking_id)
+            )
+            if not existing_tomorrow_b:
+                emp_joao = created_employees["joao.santos@deskflow.com"]
+                ws_b201 = created_workspaces["B-201"]
+                tm_start = datetime.combine(tomorrow, time(9, 0))
+                tm_end = tm_start + timedelta(hours=3)
+                tomorrow_booking = BookingORM(
+                    id=tomorrow_booking_id,
+                    workspace_id=ws_b201.id,
+                    employee_id=emp_joao.id,
+                    cost_center_id=emp_joao.cost_center_id,
+                    slot_start=tm_start,
+                    slot_end=tm_end,
+                    status="CONFIRMED",
+                )
+                session.add(tomorrow_booking)
+                await session.flush()
+                day_str = tomorrow.isoformat()
+                start_idx = (9 * 60 - 8 * 60) // 15
+                session.add_all(
+                    BookingWindowORM(
+                        booking_id=tomorrow_booking_id,
+                        workspace_id=ws_b201.id,
+                        day=day_str,
+                        slot_index=start_idx + i,
+                    )
+                    for i in range(12)
+                )
+                print("[OK] Reserva confirmada de demonstracao para amanha criada para Joao Santos.")
+
         await session.commit()
         print("\n=== BANCO DE DADOS POPULADO COM SUCESSO! ===")
         print("\nCREDENCIAIS PARA TESTES NO SWAGGER (/api/v1/auth/login):")

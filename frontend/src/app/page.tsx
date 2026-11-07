@@ -9,10 +9,11 @@ import {
   Layers,
   MapPin,
   Monitor,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,23 @@ import {
   useWorkspaceAvailability,
   useWorkspaces,
 } from "@/features/workspaces/hooks/use-workspaces";
+
+const RESOURCE_LABELS: Record<string, string> = {
+  monitor: "Monitor",
+  monitor_duplo: "Monitor Duplo",
+  tomada: "Tomada",
+  usb_c: "USB-C PD",
+  dock_station: "Dock Station",
+  cadeira_ergonomica: "Cadeira Ergonômica",
+  fone_noise_cancelling: "Headset ANC",
+  isolamento_acustico: "Isolamento Acústico",
+  tv_4k: "TV 4K",
+  whiteboard: "Quadro Branco",
+  videoconferencia: "Videoconferência",
+  videoconferencia_zoom: "Zoom Rooms",
+  projetor: "Projetor",
+  sistema_audio: "Sistema de Áudio",
+};
 
 export default function WorkspacesPage() {
   const { data: user } = useCurrentUser();
@@ -77,8 +95,25 @@ export default function WorkspacesPage() {
 
   const handleOpenBookingModal = (ws: Workspace) => {
     setBookingModalWs(ws);
+    setSelectedStartTime("09:00");
+    setSelectedEndTime("10:00");
     setActionSuccess(null);
     setActionError(null);
+  };
+
+  const handleStartTimeChange = (newStart: string) => {
+    setSelectedStartTime(newStart);
+    setActionError(null);
+    if (selectedEndTime <= newStart) {
+      const startIdx = timeOptions.indexOf(newStart);
+      const nextTime =
+        startIdx + 4 < timeOptions.length
+          ? timeOptions[startIdx + 4]!
+          : startIdx + 1 < timeOptions.length
+            ? timeOptions[startIdx + 1]!
+            : newStart;
+      setSelectedEndTime(nextTime);
+    }
   };
 
   const handleConfirmBooking = async () => {
@@ -86,8 +121,18 @@ export default function WorkspacesPage() {
     setActionError(null);
     setActionSuccess(null);
 
+    const effectiveEndTime =
+      selectedEndTime > selectedStartTime
+        ? selectedEndTime
+        : timeOptions.find((t) => t > selectedStartTime) || selectedEndTime;
+
+    if (effectiveEndTime <= selectedStartTime) {
+      setActionError("O horário de término deve ser posterior ao horário de início.");
+      return;
+    }
+
     const slotStartIso = `${selectedDay}T${selectedStartTime}:00Z`;
-    const slotEndIso = `${selectedDay}T${selectedEndTime}:00Z`;
+    const slotEndIso = `${selectedDay}T${effectiveEndTime}:00Z`;
 
     try {
       await createBookingMutation.mutateAsync({
@@ -102,7 +147,14 @@ export default function WorkspacesPage() {
         setBookingModalWs(null);
       }, 1500);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Falha ao criar reserva.";
+      let msg = err instanceof Error ? err.message : "Falha ao criar reserva.";
+      if (msg.includes("Start time must be before end time") || msg.includes("before")) {
+        msg = "O horário de término deve ser posterior ao horário de início.";
+      } else if (msg.includes("Invalid employee or time slot")) {
+        msg = "Colaborador ou intervalo de horário inválido.";
+      } else if (msg.includes("QuotaExceededError") || msg.toLowerCase().includes("quota")) {
+        msg = "Cota mensal de horas do centro de custo excedida.";
+      }
       setActionError(msg);
     }
   };
@@ -112,8 +164,31 @@ export default function WorkspacesPage() {
     setActionError(null);
     setActionSuccess(null);
 
+    const effectiveEndTime =
+      selectedEndTime > selectedStartTime
+        ? selectedEndTime
+        : timeOptions.find((t) => t > selectedStartTime) || selectedEndTime;
+
+    if (effectiveEndTime <= selectedStartTime) {
+      setActionError("O horário de término deve ser posterior ao horário de início.");
+      return;
+    }
+
+    const selectedSlots =
+      availability?.slots?.filter(
+        (slot) => slot.time >= selectedStartTime && slot.time < effectiveEndTime
+      ) || [];
+    const isOccupied = selectedSlots.length > 0 && selectedSlots.some((s) => s.is_full);
+
+    if (!isOccupied) {
+      setActionError(
+        "O espaço possui vagas disponíveis para este horário! Clique em 'Confirmar Reserva' para garantir seu posto."
+      );
+      return;
+    }
+
     const slotStartIso = `${selectedDay}T${selectedStartTime}:00Z`;
-    const slotEndIso = `${selectedDay}T${selectedEndTime}:00Z`;
+    const slotEndIso = `${selectedDay}T${effectiveEndTime}:00Z`;
 
     try {
       await joinWaitlistMutation.mutateAsync({
@@ -126,7 +201,12 @@ export default function WorkspacesPage() {
         setBookingModalWs(null);
       }, 1800);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Falha ao entrar na fila.";
+      let msg = err instanceof Error ? err.message : "Falha ao entrar na fila.";
+      if (msg.includes("Start time must be before end time") || msg.includes("before")) {
+        msg = "O horário de término deve ser posterior ao horário de início.";
+      } else if (msg.includes("Invalid employee or time slot")) {
+        msg = "Colaborador ou intervalo de horário inválido.";
+      }
       setActionError(msg);
     }
   };
@@ -286,6 +366,20 @@ export default function WorkspacesPage() {
                       {ws.capacity} {ws.capacity === 1 ? "lugar" : "lugares"}
                     </span>
                   </div>
+
+                  {ws.getResourceList().length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-2">
+                      {ws.getResourceList().map((res) => (
+                        <span
+                          key={res}
+                          className="inline-flex items-center gap-1 rounded bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 border border-slate-200"
+                        >
+                          <Sparkles className="h-3 w-3 text-blue-500" />
+                          {RESOURCE_LABELS[res] || res.replace(/_/g, " ")}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </CardHeader>
 
                 <CardContent className="pt-0 pb-4">
@@ -353,7 +447,7 @@ export default function WorkspacesPage() {
                 </label>
                 <select
                   value={selectedStartTime}
-                  onChange={(e) => setSelectedStartTime(e.target.value)}
+                  onChange={(e) => handleStartTimeChange(e.target.value)}
                   className="w-full rounded-md border border-slate-300 bg-white p-2 text-sm font-medium text-slate-900 shadow-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 >
                   {timeOptions.map((t) => (
@@ -404,25 +498,52 @@ export default function WorkspacesPage() {
             })()}
 
             <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200">
-              <span className="text-xs font-bold text-slate-800 block mb-2.5">
-                Disponibilidade das Janelas (15 minutos):
-              </span>
-              <div className="grid grid-cols-4 gap-1.5 max-h-40 overflow-y-auto pr-1">
-                {availability?.slots?.map((slot) => (
-                  <div
-                    key={slot.slot_index}
-                    className={`rounded-md p-1.5 text-center text-xs font-mono border ${
-                      slot.is_full
-                        ? "bg-red-50 text-red-900 border-red-200 font-semibold"
-                        : "bg-emerald-50 text-emerald-900 border-emerald-200 font-semibold"
-                    }`}
-                  >
-                    <div className="font-bold">{slot.time}</div>
-                    <div className="text-[10px] font-sans font-medium mt-0.5">
-                      {slot.is_full ? "Ocupado" : `${slot.seats_available} vaga`}
-                    </div>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="text-xs font-bold text-slate-800">
+                  Disponibilidade das Janelas (15 minutos):
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Clique para selecionar o horário
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5 max-h-44 overflow-y-auto pr-1">
+                {availability?.slots?.map((slot) => {
+                  const isSelected =
+                    slot.time >= selectedStartTime && slot.time < selectedEndTime;
+                  return (
+                    <button
+                      key={slot.slot_index}
+                      type="button"
+                      disabled={slot.is_full}
+                      onClick={() => handleStartTimeChange(slot.time)}
+                      className={`rounded-md p-1.5 text-center text-xs font-mono border transition-all ${
+                        slot.is_full
+                          ? "bg-red-50 text-red-900 border-red-200 cursor-not-allowed opacity-75 font-semibold"
+                          : isSelected
+                            ? "bg-blue-600 text-white border-blue-600 font-bold shadow-xs scale-102 ring-2 ring-blue-300"
+                            : "bg-emerald-50 text-emerald-900 border-emerald-200 hover:border-emerald-400 hover:bg-emerald-100 font-semibold cursor-pointer"
+                      }`}
+                      title={
+                        slot.is_full
+                          ? "Horário ocupado"
+                          : `Clique para selecionar ${slot.time}`
+                      }
+                    >
+                      <div className="font-bold">{slot.time}</div>
+                      <div
+                        className={`text-[10px] font-sans font-medium mt-0.5 ${
+                          isSelected ? "text-blue-100" : ""
+                        }`}
+                      >
+                        {slot.is_full
+                          ? "Ocupado"
+                          : isSelected
+                            ? "Selecionado"
+                            : `${slot.seats_available} vaga`}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>

@@ -47,7 +47,14 @@ async def join_waitlist(
         employee_uuid = UUID(employee_id)
         slot = TimeSlot(start=_aware_utc(payload.slot_start), end=_aware_utc(payload.slot_end))
     except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="Invalid employee or time slot") from exc
+        msg = str(exc)
+        if "before" in msg:
+            detail = "O horário de término deve ser posterior ao horário de início."
+        elif "15-minute" in msg:
+            detail = "Os horários devem seguir a grade de 15 minutos."
+        else:
+            detail = "Colaborador ou intervalo de horário inválido."
+        raise HTTPException(status_code=422, detail=detail) from exc
 
     use_case = JoinWaitlistUseCase(
         waitlist_repo=WaitlistRepositoryPostgres(db),
