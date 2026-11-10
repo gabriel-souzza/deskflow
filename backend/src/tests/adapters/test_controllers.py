@@ -757,3 +757,32 @@ def test_new_endpoints_and_cors(api_client):
 
     wl_del = client.delete(f"/api/v1/waitlist/{waitlist_id}", headers=user_headers)
     assert wl_del.status_code == 204
+
+    # 7. Workspace filtering by zone, floor and resource
+    ws_filter_zone = client.get("/api/v1/workspaces?zone=focus")
+    assert ws_filter_zone.status_code == 200
+    assert any(w["id"] == workspace_id for w in ws_filter_zone.json()["items"])
+
+    ws_filter_res = client.get("/api/v1/workspaces?resource=monitor_4k")
+    assert ws_filter_res.status_code == 200
+    assert any(w["id"] == workspace_id for w in ws_filter_res.json()["items"])
+
+    ws_filter_empty = client.get("/api/v1/workspaces?zone=nonexistent_zone_999")
+    assert ws_filter_empty.status_code == 200
+    assert len(ws_filter_empty.json()["items"]) == 0
+
+    # 8. Audit logs endpoint (RF12)
+    audit_logs_res = client.get("/api/v1/admin/audit-logs", headers=admin_headers)
+    assert audit_logs_res.status_code == 200
+    assert "items" in audit_logs_res.json()
+
+    # 9. Reports utilization rateio and cost calculations (RF09)
+    rep_res = client.get("/api/v1/reports/utilization?start_date=2026-10-10&end_date=2026-10-10", headers=admin_headers)
+    assert rep_res.status_code == 200
+    assert "cost_center_costs" in rep_res.json()
+    assert "total_cost_brl" in rep_res.json()
+
+    # 10. Reports CSV with financial rateio
+    csv_res = client.get("/api/v1/reports/export?start_date=2026-10-10&end_date=2026-10-10&format=csv", headers=admin_headers)
+    assert csv_res.status_code == 200
+    assert "custo_rateado_reais" in csv_res.text

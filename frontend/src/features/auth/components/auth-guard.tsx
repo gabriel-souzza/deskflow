@@ -20,20 +20,21 @@ export function AuthGuard({ children }: AuthGuardProps) {
   }, []);
 
   const isLoginPage = pathname === "/login";
+  const isPublicRoute = isLoginPage || pathname === "/checkin";
 
   useEffect(() => {
     if (!mounted || isLoading) return;
 
-    if (!user && !isLoginPage) {
+    if (!user && !isPublicRoute) {
       router.replace("/login");
     } else if (user && isLoginPage) {
       router.replace("/");
     }
-  }, [mounted, isLoading, user, isLoginPage, router]);
+  }, [mounted, isLoading, user, isLoginPage, isPublicRoute, router]);
 
   // Durante a montagem no cliente (SSR e primeiro ciclo de hidratação)
   if (!mounted) {
-    if (isLoginPage) {
+    if (isPublicRoute) {
       return <>{children}</>;
     }
     return (
@@ -46,9 +47,9 @@ export function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
-  // Na página de login
-  if (isLoginPage) {
-    if (user) {
+  // Na página pública sem necessidade de login (ex: /checkin via QR ou /login)
+  if (isPublicRoute) {
+    if (isLoginPage && user) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-slate-100">
           <Loader2 className="h-6 w-6 animate-spin text-blue-600" />

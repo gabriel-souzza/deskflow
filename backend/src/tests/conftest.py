@@ -10,6 +10,7 @@ os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["JWT_SECRET"] = "deskflow-test-jwt-secret-with-at-least-32-bytes"
 os.environ["DEMO_ADMIN_USERNAME"] = ""
 os.environ["DEMO_ADMIN_PASSWORD"] = ""
+os.environ["OFFICE_TIMEZONE"] = "UTC"
 
 
 @pytest.fixture

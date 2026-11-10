@@ -53,7 +53,10 @@ export default function WorkspacesPage() {
   const [mounted, setMounted] = useState(false);
   const [selectedDay, setSelectedDay] = useState(() => {
     const today = new Date();
-    return today.toISOString().split("T")[0]!;
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
   });
 
   useEffect(() => {
@@ -62,6 +65,7 @@ export default function WorkspacesPage() {
   const [floorFilter, setFloorFilter] = useState<string>("");
   const [zoneFilter, setZoneFilter] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("");
+  const [resourceFilter, setResourceFilter] = useState<string>("");
 
   const [bookingModalWs, setBookingModalWs] = useState<Workspace | null>(null);
   const [selectedStartTime, setSelectedStartTime] = useState("09:00");
@@ -73,6 +77,7 @@ export default function WorkspacesPage() {
     floor: floorFilter || undefined,
     zone: zoneFilter || undefined,
     type: typeFilter || undefined,
+    resource: resourceFilter || undefined,
   });
 
   const { data: availability } = useWorkspaceAvailability(
@@ -95,10 +100,34 @@ export default function WorkspacesPage() {
 
   const handleOpenBookingModal = (ws: Workspace) => {
     setBookingModalWs(ws);
-    setSelectedStartTime("09:00");
-    setSelectedEndTime("10:00");
     setActionSuccess(null);
     setActionError(null);
+
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const currentHourMinute = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    if (selectedDay === todayStr && currentHourMinute >= "18:00") {
+      const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
+      setSelectedDay(tomorrowStr);
+      setSelectedStartTime("09:00");
+      setSelectedEndTime("10:00");
+    } else if (selectedDay === todayStr) {
+      const nextSlot = timeOptions.find((t) => t > currentHourMinute) || "09:00";
+      setSelectedStartTime(nextSlot);
+      const nextIdx = timeOptions.indexOf(nextSlot);
+      const endSlot =
+        nextIdx + 4 < timeOptions.length
+          ? timeOptions[nextIdx + 4]!
+          : nextIdx + 1 < timeOptions.length
+            ? timeOptions[nextIdx + 1]!
+            : nextSlot;
+      setSelectedEndTime(endSlot);
+    } else {
+      setSelectedStartTime("09:00");
+      setSelectedEndTime("10:00");
+    }
   };
 
   const handleStartTimeChange = (newStart: string) => {
@@ -148,12 +177,23 @@ export default function WorkspacesPage() {
       }, 1500);
     } catch (err: unknown) {
       let msg = err instanceof Error ? err.message : "Falha ao criar reserva.";
-      if (msg.includes("Start time must be before end time") || msg.includes("before")) {
+      if (typeof msg !== "string") {
+        msg = JSON.stringify(msg);
+      }
+      if (msg.includes("Workspace capacity is unavailable") || msg.toLowerCase().includes("capacity")) {
+        msg = "O posto selecionado já está ocupado no horário escolhido. Selecione outro horário livre ou entre na Fila de Espera.";
+      } else if (msg.includes("Cannot book a time slot in the past") || msg.includes("in the past")) {
+        msg = "Não é possível reservar um horário que já passou. Escolha um horário futuro ou selecione outra data.";
+      } else if (msg.includes("outside the daily availability window")) {
+        msg = "O horário selecionado está fora do expediente comercial (08:00 às 18:00).";
+      } else if (msg.includes("Start time must be before end time") || msg.includes("before")) {
         msg = "O horário de término deve ser posterior ao horário de início.";
       } else if (msg.includes("Invalid employee or time slot")) {
         msg = "Colaborador ou intervalo de horário inválido.";
       } else if (msg.includes("QuotaExceededError") || msg.toLowerCase().includes("quota")) {
         msg = "Cota mensal de horas do centro de custo excedida.";
+      } else if (msg.includes("Slot is reserved for a waitlist notification")) {
+        msg = "Este horário está temporariamente reservado para quem foi notificado na fila de espera.";
       }
       setActionError(msg);
     }
@@ -202,8 +242,13 @@ export default function WorkspacesPage() {
       }, 1800);
     } catch (err: unknown) {
       let msg = err instanceof Error ? err.message : "Falha ao entrar na fila.";
+      if (typeof msg !== "string") {
+        msg = JSON.stringify(msg);
+      }
       if (msg.includes("Start time must be before end time") || msg.includes("before")) {
         msg = "O horário de término deve ser posterior ao horário de início.";
+      } else if (msg.includes("Cannot book a time slot in the past") || msg.includes("in the past")) {
+        msg = "Não é possível entrar na fila para um horário que já passou.";
       } else if (msg.includes("Invalid employee or time slot")) {
         msg = "Colaborador ou intervalo de horário inválido.";
       }
@@ -286,7 +331,21 @@ export default function WorkspacesPage() {
           <option value="sala">Sala de Reunião</option>
         </select>
 
-        {(floorFilter || zoneFilter || typeFilter) && (
+        <select
+          value={resourceFilter}
+          onChange={(e) => setResourceFilter(e.target.value)}
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          <option value="">Todos os Recursos</option>
+          <option value="monitor">Monitor / Monitor Duplo</option>
+          <option value="tomada">Tomada</option>
+          <option value="usb_c">USB-C / Dock</option>
+          <option value="videoconferencia">Videoconferência</option>
+          <option value="tv_4k">TV 4K</option>
+          <option value="whiteboard">Quadro Branco</option>
+        </select>
+
+        {(floorFilter || zoneFilter || typeFilter || resourceFilter) && (
           <Button
             variant="ghost"
             size="sm"
@@ -294,6 +353,7 @@ export default function WorkspacesPage() {
               setFloorFilter("");
               setZoneFilter("");
               setTypeFilter("");
+              setResourceFilter("");
             }}
             className="text-xs font-semibold text-slate-600 hover:text-slate-900 h-8 px-2.5"
           >
@@ -479,6 +539,12 @@ export default function WorkspacesPage() {
             </div>
 
             {(() => {
+              const now = new Date();
+              const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+              const currentHourMinute = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+              const isToday = selectedDay === todayStr;
+              const isRangePast = isToday && selectedEndTime <= currentHourMinute;
+
               const selectedSlots =
                 availability?.slots?.filter(
                   (slot) => slot.time >= selectedStartTime && slot.time < selectedEndTime
@@ -486,19 +552,35 @@ export default function WorkspacesPage() {
               const isSelectedRangeOccupied =
                 selectedSlots.length > 0 && selectedSlots.some((s) => s.is_full);
 
-              return isSelectedRangeOccupied ? (
-                <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900 border border-amber-200 flex items-start gap-2">
-                  <Clock className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold block">Horário com Ocupação Completa</span>
-                    O espaço já está ocupado no período selecionado ({selectedStartTime} às {selectedEndTime}). Você pode entrar na fila de espera para ser notificado com prioridade assim que uma vaga for liberada.
+              if (isRangePast) {
+                return (
+                  <div className="rounded-lg bg-slate-100 p-3 text-xs text-slate-700 border border-slate-300 flex items-start gap-2">
+                    <Clock className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Horário Encerrado</span>
+                      O período selecionado ({selectedStartTime} às {selectedEndTime}) já passou no dia de hoje. Escolha um horário posterior ou selecione outra data.
+                    </div>
                   </div>
-                </div>
-              ) : null;
+                );
+              }
+
+              if (isSelectedRangeOccupied) {
+                return (
+                  <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900 border border-amber-200 flex items-start gap-2">
+                    <Clock className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Horário com Ocupação Completa</span>
+                      O espaço já está ocupado no período selecionado ({selectedStartTime} às {selectedEndTime}). Você pode entrar na fila de espera para ser notificado com prioridade assim que uma vaga for liberada.
+                    </div>
+                  </div>
+                );
+              }
+
+              return null;
             })()}
 
             <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200">
-              <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-slate-800">
                   Disponibilidade das Janelas (15 minutos):
                 </span>
@@ -506,37 +588,86 @@ export default function WorkspacesPage() {
                   Clique para selecionar o horário
                 </span>
               </div>
+
+              {(() => {
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+                const isToday = selectedDay === todayStr;
+
+                return (
+                  <div className="flex flex-wrap items-center gap-2.5 text-[11px] mb-2 px-0.5">
+                    <span className="inline-flex items-center gap-1 font-medium text-emerald-800">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" /> Livre
+                    </span>
+                    <span className="inline-flex items-center gap-1 font-medium text-red-800">
+                      <span className="h-2 w-2 rounded-full bg-red-500 inline-block" /> Ocupado (Fila)
+                    </span>
+                    <span className="inline-flex items-center gap-1 font-medium text-blue-800">
+                      <span className="h-2 w-2 rounded-full bg-blue-600 inline-block" /> Selecionado
+                    </span>
+                    {isToday && (
+                      <span className="inline-flex items-center gap-1 font-medium text-slate-500">
+                        <span className="h-2 w-2 rounded-full bg-slate-300 inline-block" /> Encerrado
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
+
               <div className="grid grid-cols-4 gap-1.5 max-h-44 overflow-y-auto pr-1">
                 {availability?.slots?.map((slot) => {
-                  const isSelected =
-                    slot.time >= selectedStartTime && slot.time < selectedEndTime;
+                  const now = new Date();
+                  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+                  const currentHourMinute = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+                  const isToday = selectedDay === todayStr;
+                  const isSlotPast = isToday && slot.time < currentHourMinute;
+                  const isSelected = !isSlotPast && slot.time >= selectedStartTime && slot.time < selectedEndTime;
+
+                  if (isSlotPast) {
+                    return (
+                      <button
+                        key={slot.slot_index}
+                        type="button"
+                        disabled
+                        className="rounded-md p-1.5 text-center text-xs font-mono border bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60"
+                        title={`Horário ${slot.time} já encerrou hoje`}
+                      >
+                        <div className="font-bold">{slot.time}</div>
+                        <div className="text-[10px] font-sans font-medium mt-0.5 text-slate-400">Encerrado</div>
+                      </button>
+                    );
+                  }
+
                   return (
                     <button
                       key={slot.slot_index}
                       type="button"
-                      disabled={slot.is_full}
                       onClick={() => handleStartTimeChange(slot.time)}
                       className={`rounded-md p-1.5 text-center text-xs font-mono border transition-all ${
                         slot.is_full
-                          ? "bg-red-50 text-red-900 border-red-200 cursor-not-allowed opacity-75 font-semibold"
+                          ? isSelected
+                            ? "bg-red-600 text-white border-red-600 font-bold shadow-xs scale-102 ring-2 ring-red-300"
+                            : "bg-red-50 text-red-900 border-red-200 hover:bg-red-100 hover:border-red-400 font-semibold cursor-pointer"
                           : isSelected
                             ? "bg-blue-600 text-white border-blue-600 font-bold shadow-xs scale-102 ring-2 ring-blue-300"
                             : "bg-emerald-50 text-emerald-900 border-emerald-200 hover:border-emerald-400 hover:bg-emerald-100 font-semibold cursor-pointer"
                       }`}
                       title={
                         slot.is_full
-                          ? "Horário ocupado"
+                          ? `Horário ocupado — clique para entrar na fila para ${slot.time}`
                           : `Clique para selecionar ${slot.time}`
                       }
                     >
                       <div className="font-bold">{slot.time}</div>
                       <div
                         className={`text-[10px] font-sans font-medium mt-0.5 ${
-                          isSelected ? "text-blue-100" : ""
+                          isSelected ? (slot.is_full ? "text-red-100" : "text-blue-100") : ""
                         }`}
                       >
                         {slot.is_full
-                          ? "Ocupado"
+                          ? isSelected
+                            ? "Fila (Sel.)"
+                            : "Ocupado"
                           : isSelected
                             ? "Selecionado"
                             : `${slot.seats_available} vaga`}
@@ -550,12 +681,38 @@ export default function WorkspacesPage() {
 
           <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-100 pt-3">
             {(() => {
+              const now = new Date();
+              const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+              const currentHourMinute = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+              const isToday = selectedDay === todayStr;
+              const isRangePast = isToday && selectedEndTime <= currentHourMinute;
+
               const selectedSlots =
                 availability?.slots?.filter(
                   (slot) => slot.time >= selectedStartTime && slot.time < selectedEndTime
                 ) || [];
               const isSelectedRangeOccupied =
                 selectedSlots.length > 0 && selectedSlots.some((s) => s.is_full);
+
+              if (isRangePast) {
+                return (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => setBookingModalWs(null)}
+                      className="text-xs font-semibold text-slate-700 border-slate-300 hover:bg-slate-100"
+                    >
+                      Fechar
+                    </Button>
+                    <Button
+                      disabled
+                      className="bg-slate-400 text-white font-semibold text-xs cursor-not-allowed opacity-60"
+                    >
+                      Horário Encerrado
+                    </Button>
+                  </>
+                );
+              }
 
               if (isSelectedRangeOccupied) {
                 return (

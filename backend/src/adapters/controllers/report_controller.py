@@ -22,6 +22,8 @@ from infra.models import CostCenterORM, EmployeeORM
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
 
+HOURLY_RATE_BRL = Decimal("7.50")  # Base de R$ 1.200 / 160h por estação conforme escopo §1.3
+
 
 def _generate_report(db: AsyncSession) -> GenerateReportUseCase:
     return GenerateReportUseCase(BookingRepositoryPostgres(db), WorkspaceRepositoryPostgres(db))
@@ -32,7 +34,7 @@ def _format_datetime_str(dt_str: str) -> str:
         clean = dt_str.replace("Z", "+00:00")
         dt = datetime.fromisoformat(clean)
         return dt.strftime("%d/%m/%Y %H:%M")
-    except Exception:
+    except (ValueError, TypeError):
         return dt_str.replace("T", " ")[:16]
 
 
@@ -176,36 +178,43 @@ def _build_pdf_report(
     story.append(kpi_table)
     story.append(Spacer(1, 10))
 
-    story.append(Paragraph("1. Rateio de Horas por Centro de Custo", section_style))
+    story.append(Paragraph("1. Rateio de Horas e Custos por Centro de Custo", section_style))
     cc_hours_dict = report.get("cost_center_hours", {})
     if cc_hours_dict:
         cc_table_rows = [
             [
                 Paragraph("Centro de Custo", cell_header),
                 Paragraph("Horas Consumidas", cell_header),
-                Paragraph("Participação no Período", cell_header),
+                Paragraph("Custo Rateado (R$)", cell_header),
+                Paragraph("Participação", cell_header),
             ]
         ]
         total_cc_hours = float(total_hours) if total_hours > 0 else 1.0
+        total_cc_cost = float(total_hours) * float(HOURLY_RATE_BRL)
         for cc_id, h in cc_hours_dict.items():
             cc_name = cost_center_map.get(str(cc_id), str(cc_id))
             h_float = float(h)
+            cost_float = h_float * float(HOURLY_RATE_BRL)
             pct = (h_float / total_cc_hours * 100) if total_hours > 0 else 0
+            cost_str = f"R$ {cost_float:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             cc_table_rows.append(
                 [
                     Paragraph(cc_name, cell_style),
                     Paragraph(f"{h_float:.1f}h", cell_style),
+                    Paragraph(cost_str, cell_style),
                     Paragraph(f"{pct:.1f}%", cell_style),
                 ]
             )
+        total_cost_str = f"R$ {total_cc_cost:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         cc_table_rows.append(
             [
                 Paragraph("<b>TOTAL GERAL</b>", cell_bold),
                 Paragraph(f"<b>{total_hours:.1f}h</b>", cell_bold),
+                Paragraph(f"<b>{total_cost_str}</b>", cell_bold),
                 Paragraph("<b>100%</b>", cell_bold),
             ]
         )
-        cc_table = Table(cc_table_rows, colWidths=[360, 180, 180])
+        cc_table = Table(cc_table_rows, colWidths=[280, 140, 150, 150])
         cc_table.setStyle(
             TableStyle(
                 [
@@ -267,11 +276,11 @@ def _build_pdf_report(
             s_end = _format_datetime_str(b.get("slot_end", ""))
 
             try:
-                dt_s = datetime.fromisoformat(b.get("slot_start", "").replace("Z", "+00:00"))
-                dt_e = datetime.fromisoformat(b.get("slot_end", "").replace("Z", "+00:00"))
+                dt_s = datetime.fromisoformat(b.get("slot_start", ""))
+                dt_e = datetime.fromisoformat(b.get("slot_end", ""))
                 dur_h = (dt_e - dt_s).total_seconds() / 3600
                 dur_str = f"{dur_h:.1f}h"
-            except Exception:
+            except (ValueError, TypeError):
                 dur_str = "-"
 
             b_rows.append(
@@ -348,12 +357,19 @@ async def utilization(
     cost_centers_rows = (await db.execute(select(CostCenterORM.id, CostCenterORM.name))).all()
     cost_center_names = {str(row.id): row.name for row in cost_centers_rows}
 
+    cost_center_hours = {k: float(v) for k, v in report["cost_center_hours"].items()}
+    cost_center_costs = {k: round(float(v) * float(HOURLY_RATE_BRL), 2) for k, v in report["cost_center_hours"].items()}
+    total_cost_brl = round(sum(cost_center_costs.values()), 2)
+
     return {
         **report["summary"],
         "summary": report["summary"],
         "by_floor": report["by_floor"],
         "by_zone": report["by_zone"],
-        "cost_center_hours": {k: float(v) for k, v in report["cost_center_hours"].items()},
+        "cost_center_hours": cost_center_hours,
+        "cost_center_costs": cost_center_costs,
+        "total_cost_brl": total_cost_brl,
+        "hourly_rate_brl": float(HOURLY_RATE_BRL),
         "cost_center_names": cost_center_names,
     }
 
@@ -420,9 +436,17 @@ async def export_report(
             )
         writer.writerow([])
         writer.writerow(["--- RESUMO POR CENTRO DE CUSTO ---"])
-        writer.writerow(["cost_center_id", "cost_center_name", "total_hours"])
+        writer.writerow(["cost_center_id", "cost_center_name", "total_hours", "custo_rateado_reais"])
         for cc_id, hours in report["cost_center_hours"].items():
-            writer.writerow([cc_id, cost_center_map.get(cc_id, cc_id), str(hours)])
+            cost_reais = round(float(hours) * float(HOURLY_RATE_BRL), 2)
+            writer.writerow(
+                [
+                    cc_id,
+                    cost_center_map.get(cc_id, cc_id),
+                    str(hours),
+                    f"{cost_reais:.2f}",
+                ]
+            )
 
         csv_content = output.getvalue()
         return StreamingResponse(

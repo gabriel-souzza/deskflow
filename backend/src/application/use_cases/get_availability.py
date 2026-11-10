@@ -63,10 +63,12 @@ class GetAvailabilityUseCase:
                 slots.append(
                     {
                         "slot_index": slot_index,
+                        "time": start.strftime("%H:%M"),
                         "start": start.isoformat(),
                         "end": end.isoformat(),
                         "capacity": ws.capacity,
                         "seats_available": seats_available,
+                        "is_full": seats_available <= 0,
                     }
                 )
             result_workspaces.append(

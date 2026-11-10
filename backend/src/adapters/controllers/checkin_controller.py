@@ -1,8 +1,11 @@
+import os
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
+from urllib.parse import parse_qs, urlparse
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,8 +47,16 @@ async def checkin(
     is_simulation = (payload.simulate if payload else False) or simulate
     if not token:
         raise HTTPException(status_code=400, detail="qr_token is required")
+
+    actual_token = token.strip()
+    if "token=" in actual_token:
+        parsed = urlparse(actual_token)
+        params = parse_qs(parsed.query)
+        if "token" in params and params["token"]:
+            actual_token = params["token"][0]
+
     try:
-        claims = verify_token(token)
+        claims = verify_token(actual_token)
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid or expired check-in token") from exc
     if claims.get("sub") != str(id) or claims.get("purpose") != "booking-checkin":
@@ -56,7 +67,15 @@ async def checkin(
     if target_booking is None:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    checkin_time = target_booking.slot.start if is_simulation else datetime.now(UTC)
+    if is_simulation:
+        checkin_time = target_booking.slot.start
+    else:
+        tz_name = os.getenv("OFFICE_TIMEZONE", "America/Sao_Paulo")
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = ZoneInfo("UTC")
+        checkin_time = datetime.now(tz).replace(tzinfo=None)
 
     try:
         await ConfirmBookingUseCase(
@@ -85,10 +104,12 @@ async def checkin(
 @router.get("/{id}/qr", responses={200: {"content": {"image/png": {}}}})
 async def get_booking_qr_code(
     id: UUID,
+    request: Request,
     current_user: Annotated[dict, Depends(require_auth)],
+    host_url: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    """GET /api/v1/bookings/{id}/qr — Gera imagem PNG do QR Code."""
+    """GET /api/v1/bookings/{id}/qr — Gera imagem PNG do QR Code com link direto de confirmação."""
     booking = await BookingRepositoryPostgres(db).get_by_id(id)
     if booking is None:
         raise HTTPException(status_code=404, detail="Booking not found")
@@ -105,8 +126,28 @@ async def get_booking_qr_code(
         {"sub": str(id), "purpose": "booking-checkin"},
         expires_delta=token_expiry,
     )
-    png_bytes = generate_qr_png_bytes(token)
-    return Response(content=png_bytes, media_type="image/png", headers={"X-Checkin-Token": token})
+
+    frontend_base = (host_url or os.getenv("FRONTEND_URL", "")).rstrip("/")
+    if not frontend_base:
+        origin = request.headers.get("origin") or request.headers.get("referer")
+        if origin:
+            p = urlparse(origin)
+            frontend_base = f"{p.scheme}://{p.netloc}"
+        else:
+            host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "localhost:3000"
+            if ":" in host:
+                h_name = host.split(":")[0]
+                frontend_base = f"http://{h_name}:3000"
+            else:
+                frontend_base = f"http://{host}:3000"
+
+    checkin_url = f"{frontend_base}/checkin?id={id}&token={token}"
+    png_bytes = generate_qr_png_bytes(checkin_url)
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={"X-Checkin-Token": token, "X-Checkin-Url": checkin_url},
+    )
 
 
 @router.get("/{id}/checkin-token")

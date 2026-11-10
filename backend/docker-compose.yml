@@ -10,6 +10,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/deskflow
       JWT_SECRET: ${JWT_SECRET:-deskflow-secret-key-2026-change-in-production}
       ATTENDANCE_INTEGRATION_TOKEN: ${ATTENDANCE_INTEGRATION_TOKEN:-attendance-secret-token}
+      OFFICE_TIMEZONE: ${OFFICE_TIMEZONE:-America/Sao_Paulo}
+      TZ: ${OFFICE_TIMEZONE:-America/Sao_Paulo}
     depends_on:
       db:
         condition: service_healthy
@@ -21,6 +23,7 @@ services:
       POSTGRES_DB: deskflow
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in backend/.env}
+      TZ: ${OFFICE_TIMEZONE:-America/Sao_Paulo}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:

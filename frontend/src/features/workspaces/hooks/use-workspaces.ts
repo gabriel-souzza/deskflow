@@ -8,6 +8,7 @@ export interface WorkspaceFilters {
   floor?: string;
   zone?: string;
   type?: WorkspaceType | string;
+  resource?: string;
 }
 
 interface WorkspaceApiItem {
@@ -21,15 +22,17 @@ interface WorkspaceApiItem {
   is_active?: boolean;
 }
 
-interface AvailabilitySlotApi {
+export interface AvailabilitySlotApi {
   slot_index: number;
   time: string;
+  start?: string;
+  end?: string;
   seats_available: number;
   capacity: number;
   is_full: boolean;
 }
 
-interface WorkspaceAvailabilityApiResponse {
+export interface WorkspaceAvailabilityApiResponse {
   workspace_id: string;
   day: string;
   slots: AvailabilitySlotApi[];
@@ -40,6 +43,7 @@ export function useWorkspaces(filters: WorkspaceFilters = {}) {
   if (filters.floor) params.set("floor", filters.floor);
   if (filters.zone) params.set("zone", filters.zone);
   if (filters.type) params.set("type", filters.type);
+  if (filters.resource) params.set("resource", filters.resource);
 
   const queryString = params.toString();
   const endpoint = `/api/v1/workspaces${queryString ? `?${queryString}` : ""}`;
@@ -71,9 +75,28 @@ export function useWorkspaceAvailability(workspaceId: string, day: string) {
   return useQuery({
     queryKey: ["availability", workspaceId, day],
     queryFn: async () => {
-      return apiClient<WorkspaceAvailabilityApiResponse>(
+      const data = await apiClient<WorkspaceAvailabilityApiResponse>(
         `/api/v1/workspaces/${workspaceId}/availability?day=${day}`
       );
+      const normalizedSlots = (data.slots || []).map((slot) => {
+        const time =
+          slot.time ||
+          (slot.start ? slot.start.slice(11, 16) : "") ||
+          `${String(8 + Math.floor((slot.slot_index * 15) / 60)).padStart(2, "0")}:${String(
+            (slot.slot_index * 15) % 60
+          ).padStart(2, "0")}`;
+        const is_full =
+          slot.is_full !== undefined ? slot.is_full : slot.seats_available <= 0;
+        return {
+          ...slot,
+          time,
+          is_full,
+        };
+      });
+      return {
+        ...data,
+        slots: normalizedSlots,
+      };
     },
     enabled: !!workspaceId && !!day,
     refetchInterval: 1000 * 15,

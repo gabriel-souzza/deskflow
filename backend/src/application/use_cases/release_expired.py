@@ -1,4 +1,6 @@
+import os
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from domain.entities.booking import Booking
 from domain.events.event_bus import EventBus
@@ -23,8 +25,16 @@ class ReleaseExpiredBookingsUseCase:
         self.event_bus = event_bus
         self.audit_log_repo = audit_log_repo
 
-    async def execute(self) -> list[Booking]:
-        now = datetime.now(UTC).replace(tzinfo=None)
+    async def execute(self, now: datetime | None = None) -> list[Booking]:
+        if now is None:
+            tz_name = os.getenv("OFFICE_TIMEZONE", "America/Sao_Paulo")
+            try:
+                tz = ZoneInfo(tz_name)
+            except Exception:
+                tz = ZoneInfo("UTC")
+            now = datetime.now(tz).replace(tzinfo=None)
+        elif now.tzinfo is not None:
+            now = now.replace(tzinfo=None)
         expired_bookings = await self.booking_repo.find_pending_expired(
             station_cutoff=now - timedelta(minutes=10),
             meeting_room_cutoff=now - timedelta(minutes=15),

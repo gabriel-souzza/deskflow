@@ -8,6 +8,7 @@ import {
   Calendar,
   CheckCircle2,
   Edit2,
+  History,
   Lock,
   PieChart,
   Plus,
@@ -34,6 +35,7 @@ import {
   AdminWorkspaceApiItem,
   CostCenterApiItem,
   useAdminAccounts,
+  useAdminAuditLogs,
   useAdminCostCenters,
   useAdminHolidays,
   useAdminQuotas,
@@ -71,7 +73,7 @@ const RESOURCE_LABELS: Record<string, string> = {
 
 export default function AdminPage() {
   const { data: user, isLoading: userLoading } = useCurrentUser();
-  const [activeTab, setActiveTab] = useState<"quotas" | "workspaces" | "accounts" | "holidays">("quotas");
+  const [activeTab, setActiveTab] = useState<"quotas" | "workspaces" | "accounts" | "holidays" | "audit">("quotas");
 
   const { data: costCenters } = useAdminCostCenters();
   const { data: quotas } = useAdminQuotas();
@@ -91,6 +93,12 @@ export default function AdminPage() {
   const { data: holidays } = useAdminHolidays();
   const createHolidayMutation = useCreateHoliday();
   const deleteHolidayMutation = useDeleteHoliday();
+
+  // Logs de Auditoria (RF12)
+  const [auditActionFilter, setAuditActionFilter] = useState<string>("");
+  const { data: auditLogs, isLoading: auditLoading } = useAdminAuditLogs({
+    action: auditActionFilter || undefined,
+  });
 
   // Edição de Centro de Custo existente
   const [editingCc, setEditingCc] = useState<CostCenterApiItem | null>(null);
@@ -510,6 +518,18 @@ export default function AdminPage() {
         >
           <Building className="h-4 w-4" />
           Feriados & Bloqueios
+        </button>
+
+        <button
+          onClick={() => setActiveTab("audit")}
+          className={`pb-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 shrink-0 ${
+            activeTab === "audit"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <History className="h-4 w-4" />
+          Auditoria & Logs
         </button>
       </div>
 
@@ -969,6 +989,126 @@ export default function AdminPage() {
                 <p className="text-xs text-slate-400 py-3">Nenhum feriado cadastrado.</p>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "audit" && (
+        <div className="mt-6 space-y-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <History className="h-5 w-5 text-blue-600" />
+                Histórico de Auditoria & Compliance (RF12)
+              </h2>
+              <p className="text-xs text-slate-600">
+                Registro detalhado de alterações de estado, cancelamentos, check-ins, no-shows e eventos de sistema.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={auditActionFilter}
+                onChange={(e) => setAuditActionFilter(e.target.value)}
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-xs focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="">Todas as Ações</option>
+                <option value="created">Criada (created)</option>
+                <option value="confirmed">Confirmada / Check-in (confirmed)</option>
+                <option value="cancelled">Cancelada (cancelled)</option>
+                <option value="expired">Expirada / No-show (expired)</option>
+                <option value="attendance_synced">Ponto Sincronizado</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-xs">
+            {auditLoading ? (
+              <div className="p-8 text-center text-sm text-slate-500">Carregando logs de auditoria...</div>
+            ) : !auditLogs?.items || auditLogs.items.length === 0 ? (
+              <div className="p-8 text-center text-sm text-slate-500">Nenhum registro de auditoria encontrado.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm text-slate-700">
+                  <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-600 border-b border-slate-200">
+                    <tr>
+                      <th className="px-4 py-3">Data e Hora</th>
+                      <th className="px-4 py-3">Ator / Responsável</th>
+                      <th className="px-4 py-3">Ação</th>
+                      <th className="px-4 py-3">Entidade</th>
+                      <th className="px-4 py-3">Identificador</th>
+                      <th className="px-4 py-3">Motivo / Detalhes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {auditLogs.items.map((log) => {
+                      const dtFormatted = log.timestamp
+                        ? new Date(log.timestamp).toLocaleString("pt-BR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })
+                        : "—";
+
+                      const getActionBadge = (action: string) => {
+                        switch (action.toLowerCase()) {
+                          case "created":
+                            return (
+                              <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200">
+                                Criação
+                              </Badge>
+                            );
+                          case "confirmed":
+                            return (
+                              <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                                Check-in
+                              </Badge>
+                            );
+                          case "cancelled":
+                            return (
+                              <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200">
+                                Cancelamento
+                              </Badge>
+                            );
+                          case "expired":
+                            return <Badge variant="destructive">No-show / Expiração</Badge>;
+                          case "attendance_synced":
+                            return (
+                              <Badge variant="secondary" className="bg-purple-50 text-purple-700 border-purple-200">
+                                Ponto Sincronizado
+                              </Badge>
+                            );
+                          default:
+                            return <Badge variant="outline">{action}</Badge>;
+                        }
+                      };
+
+                      return (
+                        <tr key={log.id} className="hover:bg-slate-50/70 transition-colors text-xs">
+                          <td className="px-4 py-3 font-mono font-medium text-slate-700 whitespace-nowrap">
+                            {dtFormatted}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="font-bold text-slate-900">{log.actor_name}</div>
+                            {log.actor_email && (
+                              <div className="text-[11px] text-slate-500 font-medium">{log.actor_email}</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">{getActionBadge(log.action)}</td>
+                          <td className="px-4 py-3 font-medium text-slate-700 uppercase">{log.entity_type}</td>
+                          <td className="px-4 py-3 font-mono text-[11px] text-slate-500">
+                            {log.entity_id ? `${log.entity_id.slice(0, 8)}...` : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">{log.reason || "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -29,7 +29,7 @@ import {
   useCheckIn,
   useMyBookings,
 } from "@/features/bookings/hooks/use-bookings";
-import { API_BASE_URL, apiClient, getToken } from "@/lib/api-client";
+import { getApiBaseUrl, apiClient, getToken } from "@/lib/api-client";
 
 export default function MyBookingsPage() {
   const { data: bookings, isLoading } = useMyBookings();
@@ -282,7 +282,7 @@ export default function MyBookingsPage() {
               Check-in com QR Code Dinâmico
             </DialogTitle>
             <DialogDescription>
-              Apresente o QR Code na câmera do totem ou insira o token assinado.
+              Aponte a câmera do celular para o QR Code para abrir o link de confirmação direta, ou confirme abaixo.
             </DialogDescription>
           </DialogHeader>
 
@@ -291,7 +291,7 @@ export default function MyBookingsPage() {
               <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col items-center justify-center">
                 {!imgLoadError ? (
                   <img
-                    src={`${API_BASE_URL}/api/v1/bookings/${selectedBookingForQr.id}/qr?token=${getToken()}`}
+                    src={`${getApiBaseUrl()}/api/v1/bookings/${selectedBookingForQr.id}/qr?token=${getToken()}&host_url=${encodeURIComponent(typeof window !== "undefined" ? window.location.origin : "")}`}
                     alt="QR Code de Check-in"
                     className="h-48 w-48 object-contain"
                     onError={() => setImgLoadError(true)}

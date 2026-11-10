@@ -1,6 +1,8 @@
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from domain.entities.booking import Booking, BookingStatus
 from domain.entities.quota_period import QuotaExceededError
@@ -83,6 +85,20 @@ class CreateBookingUseCase:
                 booking=None,
                 status_code=409,
                 message="The requested time is outside the daily availability window",
+            )
+
+        tz_name = os.getenv("OFFICE_TIMEZONE", "America/Sao_Paulo")
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = ZoneInfo("UTC")
+        office_now = datetime.now(tz).replace(tzinfo=None)
+        start_naive = cmd.slot.start.replace(tzinfo=None) if cmd.slot.start.tzinfo else cmd.slot.start
+        if start_naive < office_now - timedelta(minutes=10):
+            return CreateBookingResult(
+                booking=None,
+                status_code=400,
+                message="Cannot book a time slot in the past",
             )
 
         async with self.unit_of_work.transaction():

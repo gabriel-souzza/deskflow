@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { API_BASE_URL, apiClient, getToken } from "@/lib/api-client";
+import { getApiBaseUrl, apiClient, getToken } from "@/lib/api-client";
 
 export interface ReportSummaryMetrics {
   total_stations?: number;
@@ -29,6 +29,9 @@ export interface UtilizationReportData extends Partial<ReportSummaryMetrics> {
   by_floor?: Record<string, number | DimensionOccupancy>;
   by_zone?: Record<string, number | DimensionOccupancy>;
   cost_center_hours?: Record<string, number>;
+  cost_center_costs?: Record<string, number>;
+  total_cost_brl?: number;
+  hourly_rate_brl?: number;
   cost_center_names?: Record<string, string>;
 }
 
@@ -52,7 +55,7 @@ export function downloadReport(
   format: "csv" | "pdf"
 ): void {
   const token = getToken();
-  const url = `${API_BASE_URL}/api/v1/reports/export?start_date=${startDate}&end_date=${endDate}&format=${format}`;
+  const url = `${getApiBaseUrl()}/api/v1/reports/export?start_date=${startDate}&end_date=${endDate}&format=${format}`;
 
   fetch(url, {
     headers: {

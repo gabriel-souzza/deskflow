@@ -1,5 +1,14 @@
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export function getApiBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (typeof window !== "undefined" && window.location.hostname) {
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+  return "http://localhost:8000";
+}
+
+export const API_BASE_URL = getApiBaseUrl();
 
 export class ApiError extends Error {
   readonly status: number;
@@ -45,7 +54,8 @@ export async function apiClient<T>(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const url = endpoint.startsWith("http") ? endpoint : `${API_BASE_URL}${endpoint}`;
+  const baseUrl = getApiBaseUrl();
+  const url = endpoint.startsWith("http") ? endpoint : `${baseUrl}${endpoint}`;
 
   const response = await fetch(url, {
     ...options,
@@ -56,7 +66,22 @@ export async function apiClient<T>(
     let errorDetail = response.statusText;
     try {
       const data = await response.json();
-      errorDetail = data.detail || JSON.stringify(data);
+      if (typeof data.detail === "string") {
+        errorDetail = data.detail;
+      } else if (Array.isArray(data.detail)) {
+        errorDetail = data.detail
+          .map((item: any) => item.msg || item.message || JSON.stringify(item))
+          .join("; ");
+      } else if (data.detail && typeof data.detail === "object") {
+        errorDetail =
+          (data.detail as any).msg ||
+          (data.detail as any).message ||
+          JSON.stringify(data.detail);
+      } else if (typeof data.message === "string") {
+        errorDetail = data.message;
+      } else {
+        errorDetail = JSON.stringify(data);
+      }
     } catch {
       // fallback
     }

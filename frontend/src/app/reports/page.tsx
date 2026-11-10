@@ -339,11 +339,24 @@ export default function ReportsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-purple-600" />
-                  Consumo por Centro de Custo
-                </CardTitle>
-                <CardDescription className="text-xs">Rateio de horas-estação</CardDescription>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4 text-purple-600" />
+                    Consumo & Rateio por Centro de Custo
+                  </CardTitle>
+                  {report?.total_cost_brl !== undefined && (
+                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      Total: R${" "}
+                      {report.total_cost_brl.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  )}
+                </div>
+                <CardDescription className="text-xs">
+                  Rateio proporcional em horas e valor financeiro (R$ 1.200/mês por estação)
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
@@ -351,12 +364,23 @@ export default function ReportsPage() {
                     const name =
                       report?.cost_center_names?.[ccId] ||
                       (ccId.length > 13 ? `${ccId.slice(0, 13)}...` : ccId);
+                    const costVal =
+                      report?.cost_center_costs?.[ccId] ?? Number(hours) * 7.5;
                     return (
                       <div key={ccId} className="flex items-center justify-between text-sm">
-                        <span className="text-slate-600 text-xs truncate max-w-[180px]" title={name}>
+                        <span className="text-slate-600 text-xs truncate max-w-[150px]" title={name}>
                           {name}
                         </span>
-                        <span className="font-semibold text-slate-900 font-mono">{hours}h</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-700 font-mono text-xs">{hours}h</span>
+                          <span className="font-bold text-emerald-700 font-mono text-xs bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                            R${" "}
+                            {costVal.toLocaleString("pt-BR", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        </div>
                       </div>
                     );
                   })}

@@ -297,3 +297,28 @@ export function useDeleteWorkspace() {
     },
   });
 }
+
+export interface AuditLogApiItem {
+  id: string;
+  actor_id: string | null;
+  actor_name: string;
+  actor_email: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  timestamp: string | null;
+  reason: string;
+}
+
+export function useAdminAuditLogs(filters: { action?: string; entity_type?: string } = {}) {
+  const params = new URLSearchParams();
+  if (filters.action) params.set("action", filters.action);
+  if (filters.entity_type) params.set("entity_type", filters.entity_type);
+  const qs = params.toString();
+  const endpoint = `/api/v1/admin/audit-logs${qs ? `?${qs}` : ""}`;
+
+  return useQuery({
+    queryKey: ["admin", "audit-logs", filters],
+    queryFn: () => apiClient<{ items: AuditLogApiItem[] }>(endpoint),
+  });
+}

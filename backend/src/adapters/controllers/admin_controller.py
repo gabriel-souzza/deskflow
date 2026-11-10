@@ -21,6 +21,7 @@ from domain.entities.holiday import Holiday
 from domain.entities.quota_period import QuotaExceededError
 from infra.database import get_db
 from infra.models import (
+    AuditLogORM,
     BookingORM,
     BookingWindowORM,
     CostCenterORM,
@@ -492,4 +493,49 @@ async def update_cost_center(
         "id": str(center.id),
         "name": center.name,
         "monthly_quota_hours": float(center.monthly_quota_hours),
+    }
+
+
+@router.get("/audit-logs")
+async def list_audit_logs(
+    limit: int = 50,
+    offset: int = 0,
+    action: str | None = None,
+    entity_type: str | None = None,
+    _user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """GET /api/v1/admin/audit-logs — Consultar histórico de auditoria do sistema (RF12)."""
+    query = (
+        select(AuditLogORM, EmployeeORM)
+        .outerjoin(EmployeeORM, EmployeeORM.id == AuditLogORM.actor_id)
+        .order_by(AuditLogORM.timestamp.desc())
+        .limit(min(limit, 200))
+        .offset(offset)
+    )
+    if action:
+        query = query.where(AuditLogORM.action == action)
+    if entity_type:
+        query = query.where(AuditLogORM.entity_type == entity_type)
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    return {
+        "items": [
+            {
+                "id": str(log.id),
+                "actor_id": str(log.actor_id) if log.actor_id else None,
+                "actor_name": actor.name if actor else ("Sistema" if not log.actor_id else "Desconhecido"),
+                "actor_email": actor.email if actor else None,
+                "action": log.action,
+                "entity_type": log.entity_type,
+                "entity_id": log.entity_id,
+                "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+                "reason": log.reason or "",
+            }
+            for log, actor in rows
+        ],
+        "limit": limit,
+        "offset": offset,
     }

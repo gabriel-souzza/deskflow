@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { API_BASE_URL } from "@/lib/api-client";
+import { getApiBaseUrl } from "@/lib/api-client";
 
 export interface RealtimeEventPayload {
   type: string;
@@ -15,7 +15,7 @@ export function useRealtimeEvents(onEvent?: (event: RealtimeEventPayload) => voi
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const streamUrl = `${API_BASE_URL}/api/v1/availability/stream`;
+    const streamUrl = `${getApiBaseUrl()}/api/v1/availability/stream`;
     let eventSource: EventSource | null = null;
 
     try {

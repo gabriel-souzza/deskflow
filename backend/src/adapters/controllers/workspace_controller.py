@@ -43,10 +43,30 @@ class WorkspaceUpdate(BaseModel):
 
 
 @router.get("/api/v1/workspaces")
-async def list_workspaces(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(WorkspaceORM).order_by(WorkspaceORM.code))
-    return {
-        "items": [
+async def list_workspaces(
+    floor: str | None = None,
+    zone: str | None = None,
+    type: Literal["estacao", "sala"] | None = None,
+    resource: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(WorkspaceORM).order_by(WorkspaceORM.code)
+    if floor:
+        query = query.where(WorkspaceORM.floor.ilike(f"%{floor.strip()}%"))
+    if zone:
+        query = query.where(WorkspaceORM.zone.ilike(f"%{zone.strip()}%"))
+    if type:
+        query = query.where(WorkspaceORM.type == type)
+
+    result = await db.execute(query)
+    items = []
+    for item in result.scalars().all():
+        res_list = json.loads(item.resources or "[]")
+        if resource:
+            normalized_res = resource.strip().casefold()
+            if not any(normalized_res in str(r).casefold() for r in res_list):
+                continue
+        items.append(
             {
                 "id": str(item.id),
                 "code": item.code,
@@ -54,11 +74,10 @@ async def list_workspaces(db: AsyncSession = Depends(get_db)):
                 "zone": item.zone,
                 "type": item.type,
                 "capacity": item.capacity,
-                "resources": json.loads(item.resources or "[]"),
+                "resources": res_list,
             }
-            for item in result.scalars().all()
-        ]
-    }
+        )
+    return {"items": items}
 
 
 @router.get("/api/v1/workspaces/{id}")
