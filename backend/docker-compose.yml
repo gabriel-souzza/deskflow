@@ -10,8 +10,10 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/deskflow
       JWT_SECRET: ${JWT_SECRET:-deskflow-secret-key-2026-change-in-production}
       ATTENDANCE_INTEGRATION_TOKEN: ${ATTENDANCE_INTEGRATION_TOKEN:-attendance-secret-token}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
       OFFICE_TIMEZONE: ${OFFICE_TIMEZONE:-America/Sao_Paulo}
       TZ: ${OFFICE_TIMEZONE:-America/Sao_Paulo}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
     depends_on:
       db:
         condition: service_healthy

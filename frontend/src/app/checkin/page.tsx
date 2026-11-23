@@ -3,8 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { CheckCircle2, XCircle, Loader2, QrCode, ArrowRight, ShieldCheck, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { CheckCircle2, XCircle, Loader2, QrCode, ArrowRight, ShieldCheck } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { getApiBaseUrl } from "@/lib/api-client";
 
@@ -15,9 +14,8 @@ function CheckinContent() {
 
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
-  const [canSimulate, setCanSimulate] = useState(false);
 
-  const performCheckin = async (simulate = false) => {
+  const performCheckin = async () => {
     if (!bookingId || !qrToken) {
       setStatus("error");
       setErrorMessage("Parâmetros de check-in ausentes ou inválidos no QR Code.");
@@ -30,7 +28,7 @@ function CheckinContent() {
     try {
       const url = `${getApiBaseUrl()}/api/v1/bookings/${bookingId}/checkin?qr_token=${encodeURIComponent(
         qrToken
-      )}${simulate ? "&simulate=true" : ""}`;
+      )}`;
 
       const res = await fetch(url, {
         method: "POST",
@@ -51,9 +49,6 @@ function CheckinContent() {
                 : "Falha ao validar check-in.";
         setErrorMessage(msg);
         setStatus("error");
-        if (msg.includes("janela de tolerância") || msg.includes("outside the allowed time window")) {
-          setCanSimulate(true);
-        }
         return;
       }
 
@@ -66,7 +61,7 @@ function CheckinContent() {
 
   useEffect(() => {
     if (bookingId && qrToken) {
-      performCheckin(false);
+      performCheckin();
     } else {
       setStatus("error");
       setErrorMessage("Código de reserva ou token não encontrado no link.");
@@ -130,22 +125,6 @@ function CheckinContent() {
               <p className="text-xs text-red-700 bg-red-50 p-3 rounded-lg border border-red-200 max-w-sm font-medium">
                 {errorMessage}
               </p>
-
-              {canSimulate && (
-                <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200 text-left space-y-2">
-                  <p className="text-[11px] text-amber-800">
-                    <strong>Modo Demonstração:</strong> Você está fora do horário do slot da reserva. Deseja simular o check-in no horário correto para testar a confirmação?
-                  </p>
-                  <Button
-                    size="sm"
-                    onClick={() => performCheckin(true)}
-                    className="w-full text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5 mr-1" />
-                    Simular Check-in no Horário Correto
-                  </Button>
-                </div>
-              )}
             </div>
           )}
         </CardContent>

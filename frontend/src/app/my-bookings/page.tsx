@@ -78,13 +78,12 @@ export default function MyBookingsPage() {
     }
   };
 
-  const handlePerformCheckIn = async (bookingId: string, simulate: boolean = false) => {
+  const handlePerformCheckIn = async (bookingId: string) => {
     setFeedback(null);
     try {
       await checkinMutation.mutateAsync({
         bookingId,
         qrToken: qrTokenInput.trim(),
-        simulate,
       });
       setFeedback({ type: "success", text: "Check-in confirmado com sucesso! Presença validada." });
       setSelectedBookingForQr(null);
@@ -96,7 +95,7 @@ export default function MyBookingsPage() {
         msg.includes("permitido entre")
       ) {
         msg =
-          "O check-in só é permitido entre 10 minutos antes e 10 minutos após o início da reserva. Use o botão 'Simular Check-in (Demonstração)' para validar agora.";
+          "O check-in só é permitido entre 10 minutos antes e 10 minutos após o início da reserva.";
       }
       setFeedback({ type: "error", text: msg });
     }
@@ -319,9 +318,6 @@ export default function MyBookingsPage() {
                     <div>
                       <span className="font-bold block">Check-in ainda não liberado</span>
                       A reserva está agendada para <b>{winInfo.dateStr} às {winInfo.startStr}</b>. A janela oficial abrirá às <b>{winInfo.openTimeStr}</b> (10 min antes).
-                      <div className="mt-1 text-slate-500">
-                        Para testes e validação no ambiente de demonstração, você pode clicar em <b>Simular Check-in</b> abaixo.
-                      </div>
                     </div>
                   </div>
                 );
@@ -334,9 +330,6 @@ export default function MyBookingsPage() {
                     <div>
                       <span className="font-bold block">Janela de Check-in Expirada</span>
                       O horário de tolerância desta reserva encerrou.
-                      <div className="mt-1 text-slate-500">
-                        Você pode simular a confirmação para fins de teste no ambiente de demonstração.
-                      </div>
                     </div>
                   </div>
                 );
@@ -392,29 +385,16 @@ export default function MyBookingsPage() {
                   className="font-mono text-xs"
                 />
               </div>
-              <div className="flex flex-wrap gap-2 pt-1">
+              <div className="pt-1">
                 <Button
                   onClick={() =>
                     selectedBookingForQr &&
-                    handlePerformCheckIn(selectedBookingForQr.id, false)
+                    handlePerformCheckIn(selectedBookingForQr.id)
                   }
                   disabled={!qrTokenInput.trim() || checkinMutation.isPending}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-9"
                 >
                   Confirmar Check-in
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() =>
-                    selectedBookingForQr &&
-                    handlePerformCheckIn(selectedBookingForQr.id, true)
-                  }
-                  disabled={!qrTokenInput.trim() || checkinMutation.isPending}
-                  className="border-blue-300 text-blue-700 hover:bg-blue-50 text-xs font-semibold"
-                  title="Valida o check-in imediatamente para testes sem esperar o horário da reserva"
-                >
-                  Simular Check-in (Demonstração)
                 </Button>
               </div>
             </div>

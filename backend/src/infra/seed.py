@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -322,145 +323,144 @@ async def seed_database() -> None:
         await session.flush()
         print("[OK] Janelas de disponibilidade de 15min geradas para os proximos 6 dias.")
 
-        # 6. Feriado de Teste
-        holiday_date = today + timedelta(days=20)
-        existing_holiday = await session.scalar(
-            select(HolidayORM).where(HolidayORM.day == holiday_date)
-        )
-        if not existing_holiday:
-            session.add(HolidayORM(day=holiday_date, description="Feriado Corporativo Exemplo"))
-            await session.flush()
-            print("[OK] Feriado corporativo de teste registrado.")
+        # Carregar dados opcionais de teste/demonstração apenas se explicitamente habilitado via SEED_DEMO_DATA=true
+        seed_demo = os.getenv("SEED_DEMO_DATA", "false").lower() in ("true", "1", "yes")
 
-        # 7. Reservas de Teste (ID canônico fixo)
-        fixed_booking_id = uuid.UUID("849bd1b4-84e4-429d-b0a9-2c2cda39af2c")
-        emp_maria = created_employees["maria.silva@deskflow.com"]
-        ws_a101 = created_workspaces["A-101"]
-        booking_start = datetime.combine(today + timedelta(days=1), time(9, 0))
-        booking_end = booking_start + timedelta(hours=2)
+        if seed_demo:
+            # 6. Feriado de Teste
+            holiday_date = today + timedelta(days=20)
+            existing_holiday = await session.scalar(
+                select(HolidayORM).where(HolidayORM.day == holiday_date)
+            )
+            if not existing_holiday:
+                session.add(HolidayORM(day=holiday_date, description="Feriado Corporativo Exemplo"))
+                await session.flush()
+                print("[OK] Feriado corporativo de teste registrado.")
 
-        existing_b = await session.scalar(
-            select(BookingORM).where(BookingORM.id == fixed_booking_id)
-        )
-        if not existing_b:
-            test_booking = BookingORM(
-                id=fixed_booking_id,
-                workspace_id=ws_a101.id,
-                employee_id=emp_maria.id,
-                cost_center_id=emp_maria.cost_center_id,
-                slot_start=booking_start,
-                slot_end=booking_end,
-                status="PENDING",
-            )
-            session.add(test_booking)
-            await session.flush()
-            # Adiciona booking windows
-            day_str = booking_start.date().isoformat()
-            start_idx = (9 * 60 - 8 * 60) // 15
-            session.add_all(
-                BookingWindowORM(
-                    booking_id=fixed_booking_id,
-                    workspace_id=ws_a101.id,
-                    day=day_str,
-                    slot_index=start_idx + i,
-                )
-                for i in range(8)  # 2 horas = 8 slots de 15 min
-            )
-            print("[OK] Reserva de teste canônica PENDING criada para A-101.")
+            # 7. Reservas de Teste (ID canônico fixo)
+            fixed_booking_id = uuid.UUID("849bd1b4-84e4-429d-b0a9-2c2cda39af2c")
+            emp_maria = created_employees["maria.silva@deskflow.com"]
+            ws_a101 = created_workspaces["A-101"]
+            booking_start = datetime.combine(today + timedelta(days=1), time(9, 0))
+            booking_end = booking_start + timedelta(hours=2)
 
-        # 8. Reservas de Demonstração Ativas para Hoje e Amanhã
-        today_start_dt = datetime.combine(today, time.min)
-        today_end_dt = datetime.combine(today, time.max)
-        existing_today_booking = await session.scalar(
-            select(BookingORM).where(
-                BookingORM.slot_start >= today_start_dt,
-                BookingORM.slot_start <= today_end_dt,
+            existing_b = await session.scalar(
+                select(BookingORM).where(BookingORM.id == fixed_booking_id)
             )
-        )
-        if not existing_today_booking:
-            today_booking_id = uuid.UUID("a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c8d")
-            existing_today_b = await session.scalar(
-                select(BookingORM).where(BookingORM.id == today_booking_id)
-            )
-            if not existing_today_b:
-                t_start = datetime.combine(today, time(10, 0))
-                t_end = t_start + timedelta(hours=2)
-                today_booking = BookingORM(
-                    id=today_booking_id,
+            if not existing_b:
+                test_booking = BookingORM(
+                    id=fixed_booking_id,
                     workspace_id=ws_a101.id,
                     employee_id=emp_maria.id,
                     cost_center_id=emp_maria.cost_center_id,
-                    slot_start=t_start,
-                    slot_end=t_end,
-                    status="CONFIRMED",
+                    slot_start=booking_start,
+                    slot_end=booking_end,
+                    status="PENDING",
                 )
-                session.add(today_booking)
+                session.add(test_booking)
                 await session.flush()
-                day_str = today.isoformat()
-                start_idx = (10 * 60 - 8 * 60) // 15
+                day_str = booking_start.date().isoformat()
+                start_idx = (9 * 60 - 8 * 60) // 15
                 session.add_all(
                     BookingWindowORM(
-                        booking_id=today_booking_id,
+                        booking_id=fixed_booking_id,
                         workspace_id=ws_a101.id,
                         day=day_str,
                         slot_index=start_idx + i,
                     )
-                    for i in range(8)
+                    for i in range(8)  # 2 horas = 8 slots de 15 min
                 )
-                print("[OK] Reserva confirmada de demonstracao para hoje criada para Maria Silva.")
+                print("[OK] Reserva de teste canônica PENDING criada para A-101.")
 
-        tomorrow = today + timedelta(days=1)
-        tomorrow_start_dt = datetime.combine(tomorrow, time.min)
-        tomorrow_end_dt = datetime.combine(tomorrow, time.max)
-        existing_tomorrow_booking = await session.scalar(
-            select(BookingORM).where(
-                BookingORM.slot_start >= tomorrow_start_dt,
-                BookingORM.slot_start <= tomorrow_end_dt,
-            )
-        )
-        if not existing_tomorrow_booking:
-            tomorrow_booking_id = uuid.UUID("f1e2d3c4-b5a6-4f7e-8d9c-0b1a2c3d4e5f")
-            existing_tomorrow_b = await session.scalar(
-                select(BookingORM).where(BookingORM.id == tomorrow_booking_id)
-            )
-            if not existing_tomorrow_b:
-                emp_joao = created_employees["joao.santos@deskflow.com"]
-                ws_b201 = created_workspaces["B-201"]
-                tm_start = datetime.combine(tomorrow, time(9, 0))
-                tm_end = tm_start + timedelta(hours=3)
-                tomorrow_booking = BookingORM(
-                    id=tomorrow_booking_id,
-                    workspace_id=ws_b201.id,
-                    employee_id=emp_joao.id,
-                    cost_center_id=emp_joao.cost_center_id,
-                    slot_start=tm_start,
-                    slot_end=tm_end,
-                    status="CONFIRMED",
+            # 8. Reservas de Demonstração Ativas para Hoje e Amanhã
+            today_start_dt = datetime.combine(today, time.min)
+            today_end_dt = datetime.combine(today, time.max)
+            existing_today_booking = await session.scalar(
+                select(BookingORM).where(
+                    BookingORM.slot_start >= today_start_dt,
+                    BookingORM.slot_start <= today_end_dt,
                 )
-                session.add(tomorrow_booking)
-                await session.flush()
-                day_str = tomorrow.isoformat()
-                start_idx = (9 * 60 - 8 * 60) // 15
-                session.add_all(
-                    BookingWindowORM(
-                        booking_id=tomorrow_booking_id,
-                        workspace_id=ws_b201.id,
-                        day=day_str,
-                        slot_index=start_idx + i,
+            )
+            if not existing_today_booking:
+                today_booking_id = uuid.UUID("a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c8d")
+                existing_today_b = await session.scalar(
+                    select(BookingORM).where(BookingORM.id == today_booking_id)
+                )
+                if not existing_today_b:
+                    t_start = datetime.combine(today, time(10, 0))
+                    t_end = t_start + timedelta(hours=2)
+                    today_booking = BookingORM(
+                        id=today_booking_id,
+                        workspace_id=ws_a101.id,
+                        employee_id=emp_maria.id,
+                        cost_center_id=emp_maria.cost_center_id,
+                        slot_start=t_start,
+                        slot_end=t_end,
+                        status="CONFIRMED",
                     )
-                    for i in range(12)
+                    session.add(today_booking)
+                    await session.flush()
+                    day_str = today.isoformat()
+                    start_idx = (10 * 60 - 8 * 60) // 15
+                    session.add_all(
+                        BookingWindowORM(
+                            booking_id=today_booking_id,
+                            workspace_id=ws_a101.id,
+                            day=day_str,
+                            slot_index=start_idx + i,
+                        )
+                        for i in range(8)
+                    )
+                    print("[OK] Reserva confirmada de demonstracao para hoje criada para Maria Silva.")
+
+            tomorrow = today + timedelta(days=1)
+            tomorrow_start_dt = datetime.combine(tomorrow, time.min)
+            tomorrow_end_dt = datetime.combine(tomorrow, time.max)
+            existing_tomorrow_booking = await session.scalar(
+                select(BookingORM).where(
+                    BookingORM.slot_start >= tomorrow_start_dt,
+                    BookingORM.slot_start <= tomorrow_end_dt,
                 )
-                print("[OK] Reserva confirmada de demonstracao para amanha criada para Joao Santos.")
+            )
+            if not existing_tomorrow_booking:
+                tomorrow_booking_id = uuid.UUID("f1e2d3c4-b5a6-4f7e-8d9c-0b1a2c3d4e5f")
+                existing_tomorrow_b = await session.scalar(
+                    select(BookingORM).where(BookingORM.id == tomorrow_booking_id)
+                )
+                if not existing_tomorrow_b:
+                    emp_joao = created_employees["joao.santos@deskflow.com"]
+                    ws_b201 = created_workspaces["B-201"]
+                    tm_start = datetime.combine(tomorrow, time(9, 0))
+                    tm_end = tm_start + timedelta(hours=3)
+                    tomorrow_booking = BookingORM(
+                        id=tomorrow_booking_id,
+                        workspace_id=ws_b201.id,
+                        employee_id=emp_joao.id,
+                        cost_center_id=emp_joao.cost_center_id,
+                        slot_start=tm_start,
+                        slot_end=tm_end,
+                        status="CONFIRMED",
+                    )
+                    session.add(tomorrow_booking)
+                    await session.flush()
+                    day_str = tomorrow.isoformat()
+                    start_idx = (9 * 60 - 8 * 60) // 15
+                    session.add_all(
+                        BookingWindowORM(
+                            booking_id=tomorrow_booking_id,
+                            workspace_id=ws_b201.id,
+                            day=day_str,
+                            slot_index=start_idx + i,
+                        )
+                        for i in range(12)
+                    )
+                    print("[OK] Reserva confirmada de demonstracao para amanha criada para Joao Santos.")
+        else:
+            print("[INFO] SEED_DEMO_DATA=false: Reservas e feriados de teste ignorados para ambiente de producao.")
 
         await session.commit()
-        print("\n=== BANCO DE DADOS POPULADO COM SUCESSO! ===")
-        print("\nCREDENCIAIS PARA TESTES NO SWAGGER (/api/v1/auth/login):")
-        print("------------------------------------------------------------------")
-        print(" ADMIN:        admin@deskflow.com       / Admin123456!")
-        print(" COLABORADOR:  maria.silva@deskflow.com / Colaborador123! (Engenharia)")
-        print(" COLABORADOR:  joao.santos@deskflow.com  / Colaborador123! (RH)")
-        print(" NAO-ELEGIVEL: ana.costa@deskflow.com    / Colaborador123! (Design)")
-        print("------------------------------------------------------------------\n")
+        print("\n=== BANCO DE DADOS INICIALIZADO COM SUCESSO! ===")
+        print("Estrutura base pronta: Centros de Custo, Espaços de Trabalho e Disponibilidade.")
 
 
 if __name__ == "__main__":

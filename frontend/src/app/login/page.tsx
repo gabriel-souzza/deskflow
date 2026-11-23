@@ -6,7 +6,6 @@ import {
   AlertCircle,
   ArrowRight,
   Building2,
-  Check,
   Eye,
   EyeOff,
   HelpCircle,
@@ -15,7 +14,6 @@ import {
   Mail,
   ShieldCheck,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,44 +26,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { useLogin } from "@/features/auth/hooks/use-auth";
 
-interface DemoAccount {
-  id: "ana" | "carlos";
-  name: string;
-  email: string;
-  pass: string;
-  role: "Colaborador" | "Admin";
-  roleVariant: "secondary" | "default";
-  initials: string;
-}
-
-const DEMO_ACCOUNTS: DemoAccount[] = [
-  {
-    id: "ana",
-    name: "Ana Silva",
-    email: "ana.silva@deskflow.com",
-    pass: "Colab123456!",
-    role: "Colaborador",
-    roleVariant: "secondary",
-    initials: "AS",
-  },
-  {
-    id: "carlos",
-    name: "Carlos Mendes",
-    email: "carlos.admin@deskflow.com",
-    pass: "Admin123456!",
-    role: "Admin",
-    roleVariant: "default",
-    initials: "CM",
-  },
-];
-
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  const [activePersona, setActivePersona] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
@@ -107,13 +73,6 @@ export default function LoginPage() {
     }
   };
 
-  const handleSelectDemo = (account: DemoAccount) => {
-    setEmail(account.email);
-    setPassword(account.pass);
-    setActivePersona(account.id);
-    setErrorMessage(null);
-  };
-
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-slate-100 p-4 relative">
       {/* Padrão sutil e limpo de fundo */}
@@ -134,69 +93,6 @@ export default function LoginPage() {
             <p className="text-xs font-medium text-slate-500 mt-0.5">
               Gestão de Espaços Híbridos
             </p>
-          </div>
-        </div>
-
-        {/* Acesso Rápido de Teste */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
-              Acesso Rápido de Teste
-            </span>
-            <span className="text-[11px] text-blue-600 font-semibold">
-              1 clique para preencher
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2.5">
-            {DEMO_ACCOUNTS.map((account) => {
-              const isSelected = activePersona === account.id;
-              return (
-                <button
-                  key={account.id}
-                  type="button"
-                  onClick={() => handleSelectDemo(account)}
-                  className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                    isSelected
-                      ? "border-blue-600 bg-blue-50/80 ring-2 ring-blue-500/20 shadow-xs"
-                      : "border-slate-200 hover:border-slate-300 hover:bg-slate-50 bg-white"
-                  }`}
-                >
-                  <div
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
-                      account.id === "ana"
-                        ? "bg-blue-100 text-blue-700"
-                        : "bg-indigo-100 text-indigo-700"
-                    }`}
-                  >
-                    {account.initials}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-900 truncate">
-                        {account.name}
-                      </span>
-                      {isSelected && <Check className="h-3.5 w-3.5 text-blue-600 shrink-0" />}
-                    </div>
-                    <Badge variant={account.roleVariant} className="text-[10px] px-1.5 py-0 h-4 mt-0.5 font-semibold">
-                      {account.role}
-                    </Badge>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Divisor Visual */}
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-slate-200" />
-          </div>
-          <div className="relative flex justify-center text-[11px] uppercase">
-            <span className="bg-white px-3 text-slate-500 font-semibold tracking-wider">
-              Ou entre com suas credenciais
-            </span>
           </div>
         </div>
 
@@ -226,10 +122,7 @@ export default function LoginPage() {
                 autoComplete="email"
                 className="pl-9 h-10 text-sm font-semibold text-slate-900 bg-white border-slate-300 placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
                 value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  setActivePersona(null);
-                }}
+                onChange={(e) => setEmail(e.target.value)}
                 required
               />
             </div>
@@ -260,10 +153,7 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 className="pl-9 pr-10 h-10 text-sm font-semibold text-slate-900 bg-white border-slate-300 placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
                 value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setActivePersona(null);
-                }}
+                onChange={(e) => setPassword(e.target.value)}
                 required
               />
               <button

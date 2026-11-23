@@ -28,15 +28,13 @@ describe("LoginPage Component", () => {
     localStorage.clear();
   });
 
-  it("renders branding, login inputs and quick demo buttons", () => {
+  it("renders branding, login inputs and submit button", () => {
     render(<LoginPage />);
 
     expect(screen.getAllByText(/DeskFlow/i).length).toBeGreaterThan(0);
     expect(screen.getByLabelText(/E-mail Corporativo/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Senha de Acesso/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Acessar Plataforma/i })).toBeInTheDocument();
-    expect(screen.getByText(/Ana Silva/i)).toBeInTheDocument();
-    expect(screen.getByText(/Carlos Mendes/i)).toBeInTheDocument();
   });
 
   it("toggles password visibility between password and text", () => {
@@ -54,17 +52,17 @@ describe("LoginPage Component", () => {
     expect(passwordInput).toHaveAttribute("type", "password");
   });
 
-  it("auto-fills credentials when clicking a quick demo persona", () => {
+  it("updates email and password inputs correctly on user input", () => {
     render(<LoginPage />);
-
-    const anaButton = screen.getByText(/Ana Silva/i).closest("button")!;
-    fireEvent.click(anaButton);
 
     const emailInput = screen.getByLabelText(/E-mail Corporativo/i) as HTMLInputElement;
     const passwordInput = screen.getByLabelText(/Senha de Acesso/i) as HTMLInputElement;
 
-    expect(emailInput.value).toBe("ana.silva@deskflow.com");
-    expect(passwordInput.value).toBe("Colab123456!");
+    fireEvent.change(emailInput, { target: { value: "colaborador@deskflow.com" } });
+    fireEvent.change(passwordInput, { target: { value: "MinhaSenha123!" } });
+
+    expect(emailInput.value).toBe("colaborador@deskflow.com");
+    expect(passwordInput.value).toBe("MinhaSenha123!");
   });
 
   it("submits the form and navigates on successful login", async () => {

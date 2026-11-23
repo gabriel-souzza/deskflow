@@ -89,15 +89,12 @@ export function useCheckIn() {
     mutationFn: async ({
       bookingId,
       qrToken,
-      simulate = false,
     }: {
       bookingId: string;
       qrToken: string;
-      simulate?: boolean;
     }) => {
-      const simParam = simulate ? "&simulate=true" : "";
       return apiClient<{ id: string; status: string }>(
-        `/api/v1/bookings/${bookingId}/checkin?qr_token=${encodeURIComponent(qrToken)}${simParam}`,
+        `/api/v1/bookings/${bookingId}/checkin?qr_token=${encodeURIComponent(qrToken)}`,
         { method: "POST" }
       );
     },

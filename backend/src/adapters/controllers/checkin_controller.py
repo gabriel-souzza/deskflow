@@ -31,7 +31,6 @@ router = APIRouter(prefix="/api/v1/bookings", tags=["checkin"])
 
 class CheckinRequest(BaseModel):
     qr_token: str | None = None
-    simulate: bool = False
 
 
 @router.post("/{id}/checkin", status_code=200)
@@ -39,12 +38,10 @@ async def checkin(
     id: UUID,
     payload: CheckinRequest | None = None,
     qr_token: str | None = Query(default=None),
-    simulate: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ):
     """POST /api/v1/bookings/{id}/checkin — Confirmação via QR."""
     token = (payload.qr_token if payload and payload.qr_token else None) or qr_token
-    is_simulation = (payload.simulate if payload else False) or simulate
     if not token:
         raise HTTPException(status_code=400, detail="qr_token is required")
 
@@ -67,15 +64,12 @@ async def checkin(
     if target_booking is None:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    if is_simulation:
-        checkin_time = target_booking.slot.start
-    else:
-        tz_name = os.getenv("OFFICE_TIMEZONE", "America/Sao_Paulo")
-        try:
-            tz = ZoneInfo(tz_name)
-        except Exception:
-            tz = ZoneInfo("UTC")
-        checkin_time = datetime.now(tz).replace(tzinfo=None)
+    tz_name = os.getenv("OFFICE_TIMEZONE", "America/Sao_Paulo")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    checkin_time = datetime.now(tz).replace(tzinfo=None)
 
     try:
         await ConfirmBookingUseCase(
