@@ -1,9 +1,14 @@
 export function getApiBaseUrl(): string {
   if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, "");
   }
   if (typeof window !== "undefined" && window.location.hostname) {
-    return `${window.location.protocol}//${window.location.hostname}:8000`;
+    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+      return `${window.location.protocol}//${window.location.hostname}:8000`;
+    }
+    // Quando rodando em produção (ex: Vercel) sem NEXT_PUBLIC_API_URL definida
+    console.warn("NEXT_PUBLIC_API_URL is not defined in environment variables. Falling back to same origin.");
+    return "";
   }
   return "http://localhost:8000";
 }

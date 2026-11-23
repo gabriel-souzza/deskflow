@@ -15,11 +15,13 @@ from sqlalchemy.pool import NullPool
 from infra.database import get_db
 from infra.models import (
     AuditLogORM,
+    AvailabilityWindowORM,
     BookingORM,
     BookingWindowORM,
     CostCenterORM,
     EmployeeORM,
     QuotaPeriodORM,
+    WaitlistORM,
     WorkspaceORM,
 )
 from infra.security import create_access_token
@@ -160,6 +162,12 @@ def test_postgres_migrations_booking_and_quota_refund(monkeypatch):
                     )
                 await session.execute(
                     delete(BookingWindowORM).where(BookingWindowORM.workspace_id == workspace_id)
+                )
+                await session.execute(
+                    delete(AvailabilityWindowORM).where(AvailabilityWindowORM.workspace_id == workspace_id)
+                )
+                await session.execute(
+                    delete(WaitlistORM).where(WaitlistORM.workspace_id == workspace_id)
                 )
                 await session.execute(
                     delete(BookingORM).where(BookingORM.workspace_id == workspace_id)

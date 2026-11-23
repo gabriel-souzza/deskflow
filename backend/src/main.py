@@ -145,19 +145,26 @@ Workspace reservation system for hybrid work environments.
     lifespan=lifespan,
 )
 
-cors_origins_env = os.getenv("CORS_ORIGINS", "*")
+cors_origins_env = os.getenv("CORS_ORIGINS", "*").strip()
 if cors_origins_env == "*":
-    allow_origins = ["*"]
+    # Em navegadores modernos, allow_credentials=True com wildcard "*" é rejeitado.
+    # allow_origin_regex dinamicamente reflete o origin solicitante permitindo credentials com segurança.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^https?://.*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 else:
-    allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] or ["*"]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allow_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allow_origins or ["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(booking_router)
 app.include_router(checkin_router)
