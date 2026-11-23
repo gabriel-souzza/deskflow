@@ -114,6 +114,11 @@ export default function AdminPage() {
   const [editingAccRole, setEditingAccRole] = useState<string>("employee");
   const [editingAccEligible, setEditingAccEligible] = useState<boolean>(true);
 
+  // Alteração de Senha de Conta
+  const [passwordAcc, setPasswordAcc] = useState<AccountApiItem | null>(null);
+  const [newPasswordValue, setNewPasswordValue] = useState("");
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
   // Exclusão de Conta
   const [accountToDelete, setAccountToDelete] = useState<AccountApiItem | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -230,6 +235,30 @@ export default function AdminPage() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Falha ao atualizar colaborador.";
       setFeedback({ type: "error", text: msg });
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!passwordAcc) return;
+    if (newPasswordValue.length < 12) {
+      setFeedback({ type: "error", text: "A nova senha deve ter no mínimo 12 caracteres." });
+      return;
+    }
+    setPasswordLoading(true);
+    setFeedback(null);
+    try {
+      await updateAccountMutation.mutateAsync({
+        id: passwordAcc.id,
+        password: newPasswordValue,
+      });
+      setFeedback({ type: "success", text: `Senha de ${passwordAcc.name} alterada com sucesso!` });
+      setPasswordAcc(null);
+      setNewPasswordValue("");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Falha ao atualizar a senha.";
+      setFeedback({ type: "error", text: msg });
+    } finally {
+      setPasswordLoading(false);
     }
   };
 
@@ -893,6 +922,19 @@ export default function AdminPage() {
                         </div>
                       ) : (
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setPasswordAcc(acc);
+                              setNewPasswordValue("");
+                            }}
+                            className="text-xs font-medium text-slate-600 hover:text-slate-900 h-8 px-2"
+                            title="Alterar senha"
+                          >
+                            <Lock className="h-3.5 w-3.5 mr-1 text-slate-500" />
+                            Senha
+                          </Button>
                           <Button
                             size="sm"
                             variant="ghost"
@@ -1587,6 +1629,51 @@ export default function AdminPage() {
               className="bg-red-600 hover:bg-red-700 text-white font-semibold"
             >
               {deleteWorkspaceMutation.isPending ? "Excluindo..." : "Confirmar Exclusão"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Modal: Alterar Senha de Conta */}
+      <Dialog open={!!passwordAcc} onOpenChange={(open) => !open && setPasswordAcc(null)}>
+        <DialogContent className="sm:max-w-md bg-white border border-slate-200 shadow-xl text-slate-900">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold text-slate-900">
+              <Lock className="h-5 w-5 text-blue-600" />
+              <span>Alterar Senha</span>
+            </DialogTitle>
+            <DialogDescription className="text-sm font-medium text-slate-600 pt-2">
+              Defina uma nova senha para <b>{passwordAcc?.name}</b> ({passwordAcc?.email}).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <label className="text-xs font-semibold text-slate-700">Nova Senha (mínimo 12 caracteres)</label>
+            <Input
+              type="password"
+              placeholder="Digite a nova senha segura..."
+              value={newPasswordValue}
+              onChange={(e) => setNewPasswordValue(e.target.value)}
+              className="text-sm"
+            />
+            {newPasswordValue.length > 0 && newPasswordValue.length < 12 && (
+              <p className="text-xs text-amber-600">A senha precisa ter pelo menos 12 caracteres ({newPasswordValue.length}/12).</p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t border-slate-100 pt-3">
+            <Button
+              variant="outline"
+              onClick={() => setPasswordAcc(null)}
+              disabled={passwordLoading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleChangePassword}
+              disabled={passwordLoading || newPasswordValue.length < 12}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+            >
+              {passwordLoading ? "Salvando..." : "Salvar Senha"}
             </Button>
           </DialogFooter>
         </DialogContent>

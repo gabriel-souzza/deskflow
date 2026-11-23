@@ -123,6 +123,7 @@ export function useUpdateAccount() {
       id,
       name,
       email,
+      password,
       role,
       cost_center_id,
       is_eligible_for_booking,
@@ -130,6 +131,7 @@ export function useUpdateAccount() {
       id: string;
       name?: string;
       email?: string;
+      password?: string;
       role?: string;
       cost_center_id?: string;
       is_eligible_for_booking?: boolean;
@@ -139,6 +141,7 @@ export function useUpdateAccount() {
         body: JSON.stringify({
           name,
           email,
+          password,
           role,
           cost_center_id,
           is_eligible_for_booking,
