@@ -145,26 +145,19 @@ Workspace reservation system for hybrid work environments.
     lifespan=lifespan,
 )
 
-cors_origins_env = os.getenv("CORS_ORIGINS", "*").strip()
-if cors_origins_env == "*":
-    # Em navegadores modernos, allow_credentials=True com wildcard "*" é rejeitado.
-    # allow_origin_regex dinamicamente reflete o origin solicitante permitindo credentials com segurança.
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origin_regex=r"^https?://.*",
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-else:
-    allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allow_origins or ["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+cors_origins_env = os.getenv("CORS_ORIGINS", "").strip().strip("\"'")
+allow_origins = [o.strip().strip("\"'") for o in cors_origins_env.split(",") if o.strip().strip("\"'")]
+
+# allow_origin_regex reflete dinamicamente a origem permitindo suporte total a CORS e credentials
+# tanto para localhost quanto para Vercel (*.vercel.app) ou qualquer domínio de produção
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allow_origins or ["*"],
+    allow_origin_regex=r"^https?://.*",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(booking_router)
 app.include_router(checkin_router)
