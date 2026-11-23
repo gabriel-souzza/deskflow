@@ -18,7 +18,8 @@ SECRET_KEY = os.getenv("JWT_SECRET") or "deskflow-default-development-secret-key
 if len(SECRET_KEY.encode("utf-8")) < 32:
     raise RuntimeError("JWT_SECRET must be configured with at least 32 bytes")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_LIFETIME = timedelta(minutes=30)
+token_minutes = int(os.getenv("JWT_EXPIRATION_MINUTES", "480"))
+ACCESS_TOKEN_LIFETIME = timedelta(minutes=token_minutes)
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:

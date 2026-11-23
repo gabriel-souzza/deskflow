@@ -32,7 +32,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/deskflow
       JWT_SECRET: ${JWT_SECRET:-deskflow-secret-key-change-in-production}
+      JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES:-480}
       ATTENDANCE_INTEGRATION_TOKEN: ${ATTENDANCE_INTEGRATION_TOKEN:-attendance-secret-token}
+      DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL:-admin@deskflow.com}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-Admin123456!}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       OFFICE_TIMEZONE: ${OFFICE_TIMEZONE:-America/Sao_Paulo}
       TZ: ${OFFICE_TIMEZONE:-America/Sao_Paulo}

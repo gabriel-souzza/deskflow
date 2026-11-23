@@ -92,12 +92,14 @@ async def seed_database() -> None:
         print("[OK] Cotas do mes corrente configuradas.")
 
         # 3. Colaboradores (IDs canônicos fixos com role no banco)
+        admin_email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@deskflow.com")
+        admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD", "Admin123456!")
         employees_data = [
             (
                 uuid.UUID("79e2f3c0-8981-4ca7-b0e4-f43a4116facf"),
                 "Administrador Geral",
-                "admin@deskflow.com",
-                "Admin123456!",
+                admin_email,
+                admin_password,
                 centers["Engenharia de Software"].id,
                 "admin",
                 True,
