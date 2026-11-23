@@ -31,7 +31,7 @@ def clean_postgres_url(raw_url: str | None) -> str:
     elif url.startswith("postgresql://"):
         url = "postgresql+asyncpg://" + url[len("postgresql://"):]
     elif not url.startswith("postgresql+asyncpg://") and url.startswith(("postgres", "pgsql")):
-        scheme, rest = url.split("://", 1)
+        _scheme, rest = url.split("://", 1)
         url = f"postgresql+asyncpg://{rest}"
 
     # Ajusta hostname se estiver rodando localmente fora do docker

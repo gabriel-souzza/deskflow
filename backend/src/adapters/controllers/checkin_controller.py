@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
@@ -49,7 +49,7 @@ async def checkin(
     if "token=" in actual_token:
         parsed = urlparse(actual_token)
         params = parse_qs(parsed.query)
-        if "token" in params and params["token"]:
+        if params.get("token"):
             actual_token = params["token"][0]
 
     try:
@@ -67,7 +67,7 @@ async def checkin(
     tz_name = os.getenv("OFFICE_TIMEZONE", "America/Sao_Paulo")
     try:
         tz = ZoneInfo(tz_name)
-    except Exception:
+    except (ZoneInfoNotFoundError, KeyError, ValueError):
         tz = ZoneInfo("UTC")
     checkin_time = datetime.now(tz).replace(tzinfo=None)
 

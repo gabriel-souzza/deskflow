@@ -2,7 +2,7 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from domain.entities.booking import Booking, BookingStatus
 from domain.entities.quota_period import QuotaExceededError
@@ -90,7 +90,7 @@ class CreateBookingUseCase:
         tz_name = os.getenv("OFFICE_TIMEZONE", "America/Sao_Paulo")
         try:
             tz = ZoneInfo(tz_name)
-        except Exception:
+        except (ZoneInfoNotFoundError, KeyError, ValueError):
             tz = ZoneInfo("UTC")
         office_now = datetime.now(tz).replace(tzinfo=None)
         start_naive = cmd.slot.start.replace(tzinfo=None) if cmd.slot.start.tzinfo else cmd.slot.start

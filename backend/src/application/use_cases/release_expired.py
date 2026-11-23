@@ -1,6 +1,6 @@
 import os
-from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from domain.entities.booking import Booking
 from domain.events.event_bus import EventBus
@@ -30,7 +30,7 @@ class ReleaseExpiredBookingsUseCase:
             tz_name = os.getenv("OFFICE_TIMEZONE", "America/Sao_Paulo")
             try:
                 tz = ZoneInfo(tz_name)
-            except Exception:
+            except (ZoneInfoNotFoundError, KeyError, ValueError):
                 tz = ZoneInfo("UTC")
             now = datetime.now(tz).replace(tzinfo=None)
         elif now.tzinfo is not None:

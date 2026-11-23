@@ -1,13 +1,13 @@
 import os
 from datetime import UTC, datetime
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 def get_office_timezone() -> ZoneInfo:
     tz_name = os.getenv("OFFICE_TIMEZONE", "America/Sao_Paulo")
     try:
         return ZoneInfo(tz_name)
-    except Exception:
+    except (ZoneInfoNotFoundError, KeyError, ValueError):
         return ZoneInfo("UTC")
 
 

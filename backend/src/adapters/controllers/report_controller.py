@@ -19,6 +19,7 @@ from adapters.repositories.workspace_repo_postgres import WorkspaceRepositoryPos
 from application.use_cases.generate_report import GenerateReportUseCase
 from infra.database import get_db
 from infra.models import CostCenterORM, EmployeeORM
+from infra.timezone import get_office_timezone
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
 
@@ -119,7 +120,7 @@ def _build_pdf_report(
 
     start_fmt = start_date.strftime("%d/%m/%Y")
     end_fmt = end_date.strftime("%d/%m/%Y")
-    now_fmt = datetime.now().strftime("%d/%m/%Y às %H:%M")
+    now_fmt = datetime.now(get_office_timezone()).strftime("%d/%m/%Y às %H:%M")
     period_label = start_fmt if start_date == end_date else f"{start_fmt} a {end_fmt}"
     story.append(
         Paragraph(
