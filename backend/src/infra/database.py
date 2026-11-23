@@ -1,4 +1,5 @@
 import os
+import urllib.parse
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -13,22 +14,49 @@ else:
 
 Base = declarative_base()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/deskflow"
 
-# Normaliza esquemas comuns de connection strings (Render, Neon, Supabase, Heroku)
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
-elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+asyncpg://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+def clean_postgres_url(raw_url: str | None) -> str:
+    """Normaliza URLs de bancos gerenciados (Neon, Supabase, Render) para o driver asyncpg."""
+    if not raw_url:
+        return "postgresql+asyncpg://postgres:postgres@localhost:5432/deskflow"
+    url = raw_url.strip()
 
-# Compatibilidade asyncpg com parâmetros SSL de PaaS
-if "sslmode=require" in DATABASE_URL:
-    DATABASE_URL = DATABASE_URL.replace("sslmode=require", "ssl=require")
+    # Preserva sqlite e outros drivers de teste
+    if url.startswith("sqlite"):
+        return url
 
-if "@db:5432" in DATABASE_URL and not os.path.exists("/.dockerenv"):
-    DATABASE_URL = DATABASE_URL.replace("@db:5432", "@localhost:5432")
+    # Normaliza esquema para asyncpg
+    if url.startswith("postgres://"):
+        url = "postgresql+asyncpg://" + url[len("postgres://"):]
+    elif url.startswith("postgresql://"):
+        url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+    elif not url.startswith("postgresql+asyncpg://") and url.startswith(("postgres", "pgsql")):
+        scheme, rest = url.split("://", 1)
+        url = f"postgresql+asyncpg://{rest}"
+
+    # Ajusta hostname se estiver rodando localmente fora do docker
+    if "@db:5432" in url and not os.path.exists("/.dockerenv"):
+        url = url.replace("@db:5432", "@localhost:5432")
+
+    parsed = urllib.parse.urlsplit(url)
+    query_params = urllib.parse.parse_qs(parsed.query)
+
+    # Converte sslmode (incompatível com asyncpg) para ssl=require e remove parâmetros desconhecidos
+    clean_params: dict[str, str] = {}
+    if "sslmode" in query_params:
+        mode = query_params["sslmode"][0]
+        if mode in ("require", "verify-ca", "verify-full", "prefer"):
+            clean_params["ssl"] = "require"
+    elif "ssl" in query_params:
+        clean_params["ssl"] = query_params["ssl"][0]
+
+    new_query = urllib.parse.urlencode(clean_params)
+    return urllib.parse.urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, new_query, parsed.fragment)
+    )
+
+
+DATABASE_URL = clean_postgres_url(os.getenv("DATABASE_URL"))
 
 engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
